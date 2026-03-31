@@ -489,8 +489,11 @@
     if (/state|province|region/.test(l)) return p.state || '';
     if (/zip|postal/.test(l)) return p.postal_code || p.zip || '';
     if (/country/.test(l) && !/code|phone|dial/.test(l)) return p.country || DEFAULTS.country;
-    if (/address|street/.test(l)) return p.address || '';
+    if (/address.?(line)?.*2|apt|suite|unit|apartment|floor|building/.test(l)) return p.address_line_2 || p.address2 || '';
+    if (/address.?(line)?.*3/.test(l)) return p.address_line_3 || '';
+    if (/address|street|address.?line.?1/.test(l)) return p.address || '';
     if (/location|where.*(you|do you).*live/.test(l)) return p.city ? `${p.city}, ${p.state || ''}`.trim().replace(/,$/, '') : '';
+    if (/city.*(state|region)|location.*(city|metro)/.test(l)) return p.city ? `${p.city}, ${p.state || ''}`.trim().replace(/,$/, '') : '';
     if (/linkedin/.test(l)) return p.linkedin_profile_url || p.linkedin || '';
     if (/github/.test(l)) return p.github_url || p.github || '';
     if (/website|portfolio|personal.?url/.test(l)) return p.website_url || p.website || '';
@@ -547,6 +550,32 @@
     if (/shift|work.?schedule|flexible.?hours/.test(l)) return 'Yes';
     if (/overtime/.test(l)) return 'Yes';
     if (/clearance.?level/.test(l)) return p.clearance_level || '';
+    // Additional patterns for broader coverage
+    if (/\bcv\b|curriculum.?vitae/.test(l)) return ''; // File upload, skip
+    if (/hear.?about.*company|how.*find.*us|recruitment.?source|job.?source/.test(l)) return DEFAULTS.howHeard;
+    if (/current.?location|home.?location|based.?in|residing/.test(l)) return p.city ? `${p.city}, ${p.state || ''}`.trim().replace(/,$/, '') : '';
+    if (/notice.?period|how.*soon|days.?notice/.test(l)) return p.notice_period || '2 weeks';
+    if (/expected.?ctc|current.?ctc|ctc/.test(l)) return p.expected_salary || DEFAULTS.salary;
+    if (/visa.?status|immigration.?status|work.?status/.test(l)) return p.visa_status || DEFAULTS.authorized;
+    if (/passport|travel.?document/.test(l)) return p.passport_country || '';
+    if (/emergency.?contact.*name/.test(l)) return p.emergency_contact_name || '';
+    if (/emergency.?contact.*(phone|number|mobile)/.test(l)) return p.emergency_contact_phone || '';
+    if (/skills|technical.?skills|key.?skills/.test(l)) return p.skills || '';
+    if (/interest|hobbies|hobby/.test(l)) return p.interests || '';
+    if (/\bsuffix\b|name.?suffix/.test(l)) return p.suffix || '';
+    if (/\bprefix\b|name.?prefix|salutation|honorific/.test(l)) return p.prefix || p.salutation || '';
+    if (/employee.?id|badge|internal.?id/.test(l)) return ''; // Skip internal IDs
+    if (/ssn|social.?security|national.?id|tax.?id|sin\b|ein\b/.test(l)) return ''; // Never auto-fill sensitive IDs
+    if (/blood.?group|blood.?type/.test(l)) return p.blood_group || '';
+    if (/marital|marriage/.test(l)) return p.marital_status || '';
+    if (/\bpan\b|pan.?card|pan.?number/.test(l)) return ''; // Sensitive
+    if (/aadhaar|aadhar/.test(l)) return ''; // Sensitive
+    if (/\biban\b|bank.?account|routing/.test(l)) return ''; // Sensitive financial
+    if (/number.*years|years.*number|how.*many.*years/.test(l)) return DEFAULTS.years;
+    if (/number.*months|months.*experience/.test(l)) return p.months_experience || '';
+    if (/proficiency|skill.?level|competency/.test(l)) return p.proficiency_level || 'Advanced';
+    if (/typing.?speed|wpm/.test(l)) return p.typing_speed || '';
+    if (/expected.?join|joining.?date|tentative.*join/.test(l)) return DEFAULTS.availability;
     return '';
   }
 
@@ -903,6 +932,74 @@
     return items.find(i => words.some(w => w.length > 3 && i.textContent?.trim().toLowerCase().includes(w))) || null;
   }
 
+  // Fuzzy select option matching for <select> elements
+  // Tries: exact match → case-insensitive exact → contains → word-boundary match → abbreviation/synonym mapping → first-word match
+  function fuzzySelectOption(sel, value) {
+    if (!sel || !value) return false;
+    const opts = $$('option', sel).filter(o => o.value && o.index > 0);
+    if (!opts.length) return false;
+    const valLower = value.toLowerCase().trim();
+    const valWords = valLower.split(/\s+/).filter(w => w.length > 1);
+
+    // 1. Exact text match (case-insensitive)
+    let match = opts.find(o => o.text.trim().toLowerCase() === valLower);
+    // 2. Value attribute exact match
+    if (!match) match = opts.find(o => o.value.toLowerCase() === valLower);
+    // 3. Option text contains value
+    if (!match) match = opts.find(o => o.text.trim().toLowerCase().includes(valLower));
+    // 4. Value contains option text (e.g., value="United States" matches option="US")
+    if (!match) match = opts.find(o => valLower.includes(o.text.trim().toLowerCase()) && o.text.trim().length > 1);
+    // 5. Word-boundary match: any significant word of value appears in option
+    if (!match && valWords.length) {
+      match = opts.find(o => {
+        const oText = o.text.trim().toLowerCase();
+        return valWords.filter(w => w.length > 2).some(w => oText.includes(w));
+      });
+    }
+    // 6. Synonym/abbreviation matching for common values
+    if (!match) {
+      const synonyms = {
+        'united states': ['us', 'usa', 'u.s.', 'u.s.a.', 'america', 'united states of america'],
+        'united kingdom': ['uk', 'u.k.', 'great britain', 'britain', 'england'],
+        'bachelor': ["bachelor's", 'bachelors', 'b.s.', 'b.a.', 'bs', 'ba', "bachelor's degree"],
+        'master': ["master's", 'masters', 'm.s.', 'm.a.', 'ms', 'ma', "master's degree", 'mba'],
+        'doctorate': ['ph.d.', 'phd', 'ph.d', 'doctoral', 'doctor of philosophy'],
+        'yes': ['true', 'y', 'affirmative', 'agree', 'accept'],
+        'no': ['false', 'n', 'negative', 'disagree', 'decline'],
+        'male': ['m', 'man', 'he/him'],
+        'female': ['f', 'woman', 'she/her'],
+        'prefer not to say': ['prefer not', 'decline to', 'choose not', 'not disclose', 'do not wish', 'rather not'],
+        'other': ['non-binary', 'non binary', 'they/them', 'other gender'],
+        'white': ['caucasian', 'white/caucasian', 'european'],
+        'black': ['african american', 'black/african', 'african'],
+        'hispanic': ['latino', 'latina', 'latinx', 'hispanic/latino'],
+        'asian': ['asian/pacific', 'east asian', 'south asian', 'southeast asian'],
+        'two or more': ['multiracial', 'two or more races', 'mixed', 'multi-racial'],
+      };
+      for (const [key, syns] of Object.entries(synonyms)) {
+        if (valLower === key || syns.some(s => valLower.includes(s) || s.includes(valLower))) {
+          match = opts.find(o => {
+            const oText = o.text.trim().toLowerCase();
+            return oText === key || oText.includes(key) || syns.some(s => oText.includes(s) || oText === s);
+          });
+          if (match) break;
+        }
+      }
+    }
+    // 7. First word match as last resort
+    if (!match && valWords.length && valWords[0].length > 3) {
+      match = opts.find(o => o.text.trim().toLowerCase().startsWith(valWords[0]));
+    }
+
+    if (match) {
+      sel.value = match.value;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      sel.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+    return false;
+  }
+
   function findOtherOption(dropdown) {
     const items = $$('li, [role="option"], [class*="option"], option, div[class*="item"]', dropdown);
     return items.find(i => /^others?$/i.test(i.textContent?.trim() || '')) ||
@@ -922,18 +1019,38 @@
   }
 
   function nativeSet(el, val) {
+    // Skip disabled/readonly fields
+    if (el.disabled || el.readOnly) return false;
+    // Clear existing value first for frameworks that track intermediate state
     try {
-      const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype :
+        el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-      if (setter) setter.call(el, val); else el.value = val;
+      if (setter) { setter.call(el, ''); setter.call(el, val); } else el.value = val;
     } catch (_) { el.value = val; }
+    // Full event sequence for React/Angular/Vue compatibility
+    el.dispatchEvent(new Event('focus', { bubbles: true }));
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    el.dispatchEvent(new Event('blur', { bubbles: true }));
-    // React synthetic event support (Greenhouse, Ashby, etc.)
+    // React synthetic event (Greenhouse, Ashby, etc.)
     const reactEvt = new Event('input', { bubbles: true });
     Object.defineProperty(reactEvt, 'simulated', { value: true });
     el.dispatchEvent(reactEvt);
+    // KeyboardEvent dispatch for masked inputs (phone formatters, etc.)
+    if (el.type === 'tel' || /phone|mobile|cell/i.test(el.name || el.id || '')) {
+      for (const ch of val) {
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
+      }
+    }
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
+    // Angular ngModel support
+    if (el.getAttribute('ng-model') || el.getAttribute('[(ngModel)]') || el.getAttribute('formControlName')) {
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    return true;
   }
 
   function realClick(el) {
@@ -966,21 +1083,55 @@
     return null;
   }
 
-  // ===================== FIELD LABEL EXTRACTION =====================
+  // ===================== FIELD LABEL EXTRACTION (Enhanced) =====================
+  // Split camelCase/PascalCase into words: "firstName" → "first name"
+  function splitCamelCase(s) { return (s || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_\-]/g, ' ').toLowerCase(); }
+
   function getLabel(el) {
     if (!el) return '';
+    // 1. Explicit aria-label
     if (el.getAttribute('aria-label')) return el.getAttribute('aria-label');
-    if (el.id) { const lbl = $(`label[for="${CSS.escape(el.id)}"]`); if (lbl) return lbl.textContent.trim(); }
-    if (el.placeholder) return el.placeholder;
-    const container = el.closest('.form-group,.field,.question,[class*="Field"],[class*="Question"],[class*="form-row"],li,.form-item,.ant-form-item,.ant-row,[data-testid],[role="group"],.css-1wa3eu0-placeholder,.MuiFormControl-root,.MuiGrid-item,fieldset');
-    if (container) {
-      const lbl = container.querySelector('label,[class*="label"],[class*="Label"],legend,[class*="title"],[class*="prompt"]');
-      if (lbl && lbl !== el) return lbl.textContent.trim();
+    // 2. aria-describedby (resolves to element text)
+    const describedBy = el.getAttribute('aria-describedby');
+    if (describedBy) {
+      const descEl = document.getElementById(describedBy);
+      if (descEl?.textContent?.trim()) return descEl.textContent.trim();
     }
-    // Also try previous sibling
+    // 3. aria-labelledby
+    const labelledBy = el.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const lblEl = document.getElementById(labelledBy);
+      if (lblEl?.textContent?.trim()) return lblEl.textContent.trim();
+    }
+    // 4. label[for=id]
+    if (el.id) { const lbl = $(`label[for="${CSS.escape(el.id)}"]`); if (lbl) return lbl.textContent.trim(); }
+    // 5. placeholder
+    if (el.placeholder) return el.placeholder;
+    // 6. data-automation-id (Workday, etc.)
+    const autoId = el.getAttribute('data-automation-id') || el.getAttribute('data-testid') || el.getAttribute('data-qa');
+    if (autoId) {
+      const readable = splitCamelCase(autoId);
+      if (readable.length > 2 && !/^(input|field|text|form|container)$/i.test(readable)) return readable;
+    }
+    // 7. Container search (fieldset legend takes priority)
+    const fieldset = el.closest('fieldset');
+    if (fieldset) {
+      const legend = fieldset.querySelector('legend');
+      if (legend?.textContent?.trim()) return legend.textContent.trim();
+    }
+    const container = el.closest('.form-group,.field,.question,[class*="Field"],[class*="Question"],[class*="form-row"],li,.form-item,.ant-form-item,.ant-row,[data-testid],[role="group"],.css-1wa3eu0-placeholder,.MuiFormControl-root,.MuiGrid-item,fieldset,[class*="formElement"],[class*="input-group"],[class*="form-field"]');
+    if (container) {
+      const lbl = container.querySelector('label,[class*="label"],[class*="Label"],legend,[class*="title"],[class*="prompt"],[class*="question-text"]');
+      if (lbl && lbl !== el && !lbl.contains(el)) return lbl.textContent.trim();
+    }
+    // 8. Previous sibling (label, span, div)
     const prev = el.previousElementSibling;
     if (prev && (prev.tagName === 'LABEL' || prev.tagName === 'SPAN' || prev.tagName === 'DIV') && prev.textContent?.trim().length < 100) return prev.textContent.trim();
-    return el.name?.replace(/[_\-]/g, ' ') || '';
+    // 9. Parent text (for inline labels like "<div>City <input/></div>")
+    const parentText = el.parentElement?.childNodes?.[0];
+    if (parentText?.nodeType === 3 && parentText.textContent?.trim().length > 1 && parentText.textContent?.trim().length < 60) return parentText.textContent.trim();
+    // 10. name/id with camelCase splitting
+    return splitCamelCase(el.name || el.id) || '';
   }
 
   function isFieldRequired(el) {
@@ -1057,7 +1208,7 @@
       await sleep(200); // Accuracy-first: deliberate pacing between fields
     }
 
-    // Select dropdowns — only unselected ones
+    // Select dropdowns — only unselected ones (with fuzzy matching)
     const selects = $$('select').filter(el => isVisible(el) && !hasFieldValue(el));
     for (const sel of selects) {
       const lbl = getLabel(sel);
@@ -1067,17 +1218,112 @@
         const lblLower = (lbl || '').toLowerCase();
         if (/gender|disability|veteran|race|ethnicity|sex\b|heritage/i.test(lblLower)) {
           const opts = $$('option', sel).filter(o => o.value && o.index > 0);
-          const fb = opts.find(o => /prefer not|decline|not to|do not|don.t wish/i.test(o.text));
-          if (fb) { sel.value = fb.value; sel.dispatchEvent(new Event('change', { bubbles: true })); filled++; }
+          const fb = opts.find(o => /prefer not|decline|not to|do not|don.t wish|not disclose|not specified|choose not/i.test(o.text));
+          if (fb) { sel.value = fb.value; sel.dispatchEvent(new Event('change', { bubbles: true })); filled++; _fillStats.fieldsFilled++; }
         }
         continue;
       }
-      const opt = $$('option', sel).find(o => o.text.toLowerCase().includes(val.toLowerCase()));
-      if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true })); filled++; }
+      _fillStats.fieldsAttempted++;
+      const matched = fuzzySelectOption(sel, val);
+      if (matched) { filled++; _fillStats.fieldsFilled++; }
       else {
-        // Try first valid option as fallback
-        const opts = $$('option', sel).filter(o => o.value && o.index > 0);
-        if (opts.length) { sel.value = opts[0].value; sel.dispatchEvent(new Event('change', { bubbles: true })); filled++; }
+        // For required selects, pick first valid option as absolute last resort
+        if (isFieldRequired(sel)) {
+          const opts = $$('option', sel).filter(o => o.value && o.index > 0);
+          if (opts.length) { sel.value = opts[0].value; sel.dispatchEvent(new Event('change', { bubbles: true })); filled++; _fillStats.fieldsFilled++; }
+        }
+        markFieldNotFilled(sel);
+      }
+    }
+
+    // React Select / Combobox / Autocomplete dropdowns (custom widgets not covered by <select>)
+    const comboboxSelectors = [
+      // React Select (v2/v3)
+      '.react-select__control:not(.react-select__control--has-value),.select__control:not(.select__control--has-value)',
+      // Select2
+      '.select2-selection:not(.select2-selection--has-value),.select2-container:not(.select2-container--has-value)',
+      // MUI Autocomplete
+      '.MuiAutocomplete-root:not(.MuiAutocomplete-hasValue)',
+      // Ant Design Select
+      '.ant-select:not(.ant-select-open):not(.ant-select-has-value)',
+      // Custom combobox/listbox triggers
+      '[role="combobox"]:not([aria-expanded="true"])',
+      // Downshift-based
+      '[data-testid*="combobox"]',
+      // Generic autocomplete inputs that aren't filled
+      'input[role="combobox"]:not([value])',
+      'input[aria-autocomplete="list"]:not([value])',
+      'input[aria-autocomplete="both"]:not([value])',
+    ];
+    for (const sel of comboboxSelectors) {
+      const widgets = $$(sel).filter(el => {
+        if (!isVisible(el)) return false;
+        // Skip if already has a value
+        const hasVal = el.querySelector('.react-select__single-value,.select__single-value,.select2-selection__rendered:not(.select2-selection__placeholder),.ant-select-selection-item,.MuiAutocomplete-tag');
+        if (hasVal && hasVal.textContent?.trim()) return false;
+        // Skip if input inside already has value
+        const inp = el.querySelector('input') || (el.tagName === 'INPUT' ? el : null);
+        if (inp && inp.value?.trim()) return false;
+        return true;
+      });
+      for (const widget of widgets) {
+        const lbl = getLabel(widget);
+        if (!lbl) continue;
+        const val = guessFieldValue(lbl, p, widget);
+        if (!val) continue;
+        markFieldFilling(widget);
+        // Find the input inside the widget
+        const inp = widget.querySelector('input[type="text"],input:not([type]),input[role="combobox"]') || (widget.tagName === 'INPUT' ? widget : null);
+        if (inp) {
+          // Type into the input to trigger the dropdown
+          inp.focus(); await sleep(200);
+          nativeSet(inp, val);
+          await sleep(600); // Wait for dropdown to appear
+          // Look for the dropdown that appeared
+          const dd = findAutocompleteDropdown(inp);
+          if (dd) {
+            const match = findBestDropdownMatch(dd, val);
+            if (match) { realClick(match); await sleep(300); markFieldFilled(widget); filled++; _fillStats.fieldsFilled++; continue; }
+            // Try "Other" as fallback
+            const other = findOtherOption(dd);
+            if (other) { realClick(other); await sleep(200); }
+          }
+          // Even if no dropdown match, the typed value may be accepted
+          inp.dispatchEvent(new Event('blur', { bubbles: true }));
+          inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+          inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', keyCode: 9, bubbles: true }));
+          await sleep(200);
+          markFieldFilled(widget); filled++; _fillStats.fieldsFilled++;
+        } else {
+          // No input found — try clicking the widget to open it, then select from dropdown
+          realClick(widget); await sleep(500);
+          const dd = findAutocompleteDropdown(widget);
+          if (dd) {
+            const match = findBestDropdownMatch(dd, val);
+            if (match) { realClick(match); await sleep(300); markFieldFilled(widget); filled++; _fillStats.fieldsFilled++; continue; }
+          }
+          // Close dropdown
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        }
+      }
+    }
+
+    // Multi-select checkboxes (e.g., "Select all that apply" style questions)
+    const multiSelectGroups = $$('fieldset,[role="group"],[class*="checkbox-group"],[class*="multi-select"]').filter(isVisible);
+    for (const group of multiSelectGroups) {
+      const checkboxes = $$('input[type="checkbox"]', group).filter(el => isVisible(el) && !el.checked);
+      if (!checkboxes.length) continue;
+      const lbl = getLabel(group) || group.querySelector('legend')?.textContent?.trim() || '';
+      if (!lbl) continue;
+      const val = guessFieldValue(lbl, p, group);
+      if (!val) continue;
+      // Try to match checkbox labels to the guessed value
+      const valLower = val.toLowerCase();
+      for (const cb of checkboxes) {
+        const cbLabel = getLabel(cb).toLowerCase();
+        if (cbLabel && (valLower.includes(cbLabel) || cbLabel.includes(valLower))) {
+          realClick(cb); filled++;
+        }
       }
     }
 
@@ -1159,8 +1405,7 @@
       const lbl = getLabel(sel);
       const val = guessFieldValue(lbl, p, sel);
       if (!val) continue;
-      const opt = $$('option', sel).find(o => o.text.toLowerCase().includes(val.toLowerCase()));
-      if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true })); refilled++; }
+      if (fuzzySelectOption(sel, val)) refilled++;
     }
     if (refilled > 0) LOG(`Verification pass: re-filled ${refilled} fields that were cleared`);
     _fillStats.fieldsVerified += refilled;
@@ -3224,48 +3469,121 @@
 
   // ===================== FORM VALIDATION ERROR HANDLER =====================
   async function handleValidationErrors() {
-    // Wait a moment for validation to trigger
-    await sleep(500);
-    const errors = $$('.error,.field-error,.error-message,.validation-error,[class*="error"],[class*="Error"],.invalid-feedback,.help-block.with-errors,.field-validation-error,[aria-invalid="true"],[data-error]')
-      .filter(el => isVisible(el) && el.textContent?.trim());
-
-    if (!errors.length) return 0;
-    LOG(`Found ${errors.length} validation errors — attempting to fix`);
-
-    let fixed = 0;
+    // Multi-pass validation error handling with progressively broader detection
+    let totalFixed = 0;
     const p = await getProfile();
-    for (const errEl of errors) {
-      // Find the associated input
-      const container = errEl.closest('.form-group,.field,.question,[class*="Field"],[class*="Question"],li,.form-item,.ant-form-item,.MuiFormControl-root,fieldset,div');
-      if (!container) continue;
-      const inp = container.querySelector('input:not([type=hidden]):not([type=file]),textarea,select');
-      if (!inp || hasFieldValue(inp)) continue;
 
-      const lbl = getLabel(inp);
-      const val = guessFieldValue(lbl, p, inp);
-      if (!val) continue;
+    for (let pass = 0; pass < 3; pass++) {
+      await sleep(pass === 0 ? 500 : 800); // Let frameworks render errors
 
-      if (inp.tagName === 'SELECT') {
-        const opt = $$('option', inp).find(o => o.text.toLowerCase().includes(val.toLowerCase()));
-        if (opt) { inp.value = opt.value; inp.dispatchEvent(new Event('change', { bubbles: true })); fixed++; }
-      } else {
-        inp.focus(); nativeSet(inp, val); fixed++;
+      // Broad error selector set covering all major UI frameworks
+      const errorSelectors = [
+        // Standard error classes
+        '.error', '.field-error', '.error-message', '.validation-error',
+        '.invalid-feedback', '.help-block.with-errors', '.field-validation-error',
+        // Generic class patterns
+        '[class*="error"]', '[class*="Error"]', '[class*="invalid"]', '[class*="Invalid"]',
+        // ARIA
+        '[aria-invalid="true"]', '[data-error]', '[aria-errormessage]',
+        // Role-based
+        '[role="alert"]',
+        // Bootstrap
+        '.invalid-tooltip', '.is-invalid',
+        // MUI
+        '.Mui-error', '.MuiFormHelperText-root.Mui-error',
+        // Ant Design
+        '.ant-form-item-has-error', '.ant-form-explain',
+        // Workday
+        '[data-automation-id*="error"]', '[data-automation-id*="Error"]',
+        // Toast/inline errors
+        '[class*="Toast"][class*="error"]', '[class*="toast"][class*="error"]',
+        // Required field indicators that are visible (field still empty)
+        '.required-error', '[class*="required-error"]',
+      ];
+
+      const errors = $$(errorSelectors.join(',')).filter(el => {
+        if (!isVisible(el)) return false;
+        // Skip if it's a generic container with "error" in class but no actual error text
+        if (el.tagName === 'FORM' || el.tagName === 'BODY') return false;
+        return true;
+      });
+
+      if (!errors.length) break;
+      if (pass === 0) LOG(`Found ${errors.length} validation errors — attempting multi-pass fix`);
+
+      let passFixed = 0;
+      const processedInputs = new Set();
+
+      for (const errEl of errors) {
+        // Find the associated input via multiple strategies
+        const container = errEl.closest('.form-group,.field,.question,[class*="Field"],[class*="Question"],li,.form-item,.ant-form-item,.MuiFormControl-root,.MuiGrid-item,fieldset,[class*="formElement"],[class*="form-row"],[class*="input-group"],div[class]');
+        if (!container) continue;
+
+        // Try multiple input selectors
+        const inp = container.querySelector('input:not([type=hidden]):not([type=file]):not([type=submit]):not([type=button]),textarea,select') ||
+          container.querySelector('[contenteditable="true"]') ||
+          container.querySelector('[role="combobox"] input,[role="listbox"]');
+        if (!inp) continue;
+        if (processedInputs.has(inp)) continue;
+        processedInputs.add(inp);
+
+        // Skip if already has value (error might be format-related, not emptiness)
+        if (hasFieldValue(inp) && inp.tagName !== 'SELECT') continue;
+
+        const lbl = getLabel(inp);
+        const val = guessFieldValue(lbl, p, inp);
+        if (!val) continue;
+
+        if (inp.tagName === 'SELECT') {
+          if (fuzzySelectOption(inp, val)) passFixed++;
+        } else if (inp.getAttribute('contenteditable') === 'true') {
+          inp.textContent = ''; inp.textContent = val;
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+          inp.dispatchEvent(new Event('change', { bubbles: true }));
+          passFixed++;
+        } else {
+          inp.focus(); await sleep(50);
+          nativeSet(inp, val);
+          inp.dispatchEvent(new Event('blur', { bubbles: true }));
+          passFixed++;
+        }
+        await sleep(80);
       }
-      await sleep(60);
+
+      // Also handle aria-invalid fields directly (may not have visible error text)
+      const invalidFields = $$('[aria-invalid="true"]').filter(el => isVisible(el) && !hasFieldValue(el) && !processedInputs.has(el));
+      for (const inp of invalidFields) {
+        processedInputs.add(inp);
+        const lbl = getLabel(inp);
+        const val = guessFieldValue(lbl, p, inp);
+        if (!val) continue;
+        if (inp.tagName === 'SELECT') { if (fuzzySelectOption(inp, val)) passFixed++; }
+        else { inp.focus(); nativeSet(inp, val); inp.dispatchEvent(new Event('blur', { bubbles: true })); passFixed++; }
+        await sleep(60);
+      }
+
+      // Handle required fields that are still empty (even without visible error)
+      if (pass >= 1) {
+        const emptyRequired = $$('input:not([type=hidden]):not([type=file]),textarea,select')
+          .filter(el => isVisible(el) && isFieldRequired(el) && !hasFieldValue(el) && !processedInputs.has(el));
+        for (const inp of emptyRequired) {
+          processedInputs.add(inp);
+          const lbl = getLabel(inp);
+          const val = guessFieldValue(lbl, p, inp);
+          if (!val) continue;
+          if (inp.tagName === 'SELECT') { if (fuzzySelectOption(inp, val)) passFixed++; }
+          else { inp.focus(); await sleep(50); nativeSet(inp, val); passFixed++; }
+          await sleep(60);
+        }
+      }
+
+      totalFixed += passFixed;
+      if (passFixed === 0) break; // No more progress, stop retrying
+      LOG(`Validation fix pass ${pass + 1}: fixed ${passFixed} fields`);
     }
 
-    // Also handle aria-invalid fields directly
-    const invalidFields = $$('[aria-invalid="true"]').filter(el => isVisible(el) && !hasFieldValue(el));
-    for (const inp of invalidFields) {
-      const lbl = getLabel(inp);
-      const val = guessFieldValue(lbl, p, inp);
-      if (!val) continue;
-      inp.focus(); nativeSet(inp, val); fixed++;
-      await sleep(60);
-    }
-
-    LOG(`Fixed ${fixed} validation errors`);
-    return fixed;
+    if (totalFixed > 0) LOG(`Total validation errors fixed: ${totalFixed}`);
+    return totalFixed;
   }
 
   // ===================== ERROR RECOVERY & RETRY =====================
