@@ -1156,7 +1156,7 @@
       const idx = el.selectedIndex;
       if (idx >= 0) {
         const txt = (el.options[idx]?.textContent || '').trim().toLowerCase();
-        if (!txt || /^(select|choose|please|--|—)/.test(txt)) return false;
+        if (!txt || /^(select|choose|please|--|—|none|pick|option|all$|\.\.\.|…)/.test(txt)) return false;
       }
       return true;
     }
@@ -1369,12 +1369,76 @@
       if (val && !isNaN(Number(val))) { nativeSet(n, val); n.dispatchEvent(new Event('change', { bubbles: true })); filled++; await sleep(150); }
     }
 
-    // Contenteditable divs (rich text editors)
-    const editables = $$('[contenteditable="true"]').filter(el => isVisible(el) && !el.textContent?.trim());
+    // URL fields (linkedin, github, portfolio, etc.)
+    const urlInputs = $$('input[type=url]').filter(el => isVisible(el) && !el.value?.trim());
+    for (const u of urlInputs) {
+      const lbl = getLabel(u);
+      const val = guessFieldValue(lbl, p, u);
+      if (val) {
+        // Ensure URL has protocol prefix for type=url validation
+        const urlVal = /^https?:\/\//i.test(val) ? val : `https://${val}`;
+        nativeSet(u, urlVal); filled++; await sleep(150);
+      }
+    }
+
+    // Month fields (e.g., graduation month, start month)
+    const monthInputs = $$('input[type=month]').filter(el => isVisible(el) && !el.value);
+    for (const m of monthInputs) {
+      const lbl = getLabel(m);
+      const l = (lbl || '').toLowerCase();
+      let val = '';
+      if (/start|available|begin|join/.test(l)) {
+        const today = new Date(); today.setDate(today.getDate() + 14);
+        val = today.toISOString().slice(0, 7); // YYYY-MM
+      } else if (/grad|end|completion|finish/.test(l)) {
+        val = p.graduation_year ? `${p.graduation_year}-05` : '';
+      } else if (/birth|dob/.test(l)) {
+        val = p.dob ? p.dob.slice(0, 7) : '';
+      }
+      if (val) { nativeSet(m, val); filled++; }
+    }
+
+    // Datetime-local fields
+    const dtInputs = $$('input[type=datetime-local]').filter(el => isVisible(el) && !el.value);
+    for (const dt of dtInputs) {
+      const lbl = getLabel(dt);
+      const l = (lbl || '').toLowerCase();
+      if (/start|available|begin|join|earliest/.test(l)) {
+        const d = new Date(); d.setDate(d.getDate() + 14); d.setHours(9, 0, 0, 0);
+        nativeSet(dt, d.toISOString().slice(0, 16)); filled++;
+      }
+    }
+
+    // Time fields (interview time preference, availability)
+    const timeInputs = $$('input[type=time]').filter(el => isVisible(el) && !el.value);
+    for (const t of timeInputs) {
+      nativeSet(t, '09:00'); filled++; // Default to 9 AM
+    }
+
+    // Contenteditable divs (rich text editors — Quill, Draft.js, ProseMirror, TinyMCE, etc.)
+    const editables = $$('[contenteditable="true"],.ql-editor,.DraftEditor-root,.ProseMirror,[role="textbox"][contenteditable],.tox-edit-area__iframe')
+      .filter(el => isVisible(el) && !el.textContent?.trim());
     for (const ed of editables) {
-      const lbl = getLabel(ed) || ed.getAttribute('data-placeholder') || '';
+      const lbl = getLabel(ed) || ed.getAttribute('data-placeholder') || ed.getAttribute('aria-label') || '';
       const val = guessFieldValue(lbl, p, ed);
-      if (val) { ed.textContent = val; ed.dispatchEvent(new Event('input', { bubbles: true })); filled++; await sleep(150); }
+      if (val) {
+        // Clear first, then set — handles Quill/Draft.js placeholder behavior
+        ed.innerHTML = '';
+        ed.focus();
+        await sleep(100);
+        // Use innerHTML for rich text, textContent for plain
+        if (ed.classList.contains('ql-editor') || ed.classList.contains('ProseMirror')) {
+          ed.innerHTML = `<p>${val}</p>`;
+        } else {
+          ed.textContent = val;
+        }
+        ed.dispatchEvent(new Event('input', { bubbles: true }));
+        ed.dispatchEvent(new Event('change', { bubbles: true }));
+        ed.dispatchEvent(new Event('blur', { bubbles: true }));
+        markFieldFilled(ed);
+        filled++; _fillStats.fieldsFilled++;
+        await sleep(150);
+      }
     }
 
     // Fix phone country code on every fallback fill pass
