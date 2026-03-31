@@ -395,6 +395,12 @@
     const saved = await st.get(SK.ANS);
     _answerBank = saved || {};
     _answerBankLoaded = true;
+    // Migrate old string-only entries to confidence-tracked format
+    for (const [k, v] of Object.entries(_answerBank)) {
+      if (typeof v === 'string') {
+        _answerBank[k] = { value: v, count: 1, lastUsed: Date.now() };
+      }
+    }
     // Also pull from OptimHire storage if available
     const ohKeys = ['candidateDetails', 'userDetails', 'applicationDetails', 'questionAnswers', 'responses'];
     const ohData = await st.getMulti(ohKeys);
@@ -414,37 +420,94 @@
     const response = node.response || node.answer || node.value || node.selected || node.a || node.text;
     if (response && typeof response === 'string') {
       const keys = [node.question, node.key, node.id, node.label, node.name];
-      keys.forEach(k => { if (k && typeof k === 'string') _answerBank[normalizeKey(k)] = response; });
+      keys.forEach(k => { if (k && typeof k === 'string') learnAnswerSync(normalizeKey(k), response); });
     }
     Object.values(node).forEach(collectEntries);
   }
 
   function normalizeKey(s) { return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
 
+  // Synchronous in-memory learn (no storage write — caller must save)
+  function learnAnswerSync(key, value) {
+    if (!key || !value) return;
+    const existing = _answerBank[key];
+    if (existing && typeof existing === 'object') {
+      if (existing.value === value) {
+        // Same answer — boost confidence
+        existing.count = (existing.count || 1) + 1;
+        existing.lastUsed = Date.now();
+      } else {
+        // Different answer — only overwrite if new answer has been seen before or existing has low confidence
+        if (existing.count <= 1) {
+          _answerBank[key] = { value, count: 1, lastUsed: Date.now() };
+        }
+        // If existing has high confidence (count > 1), keep it unless we've seen this new value before
+        // Store as alternate for future comparison
+        if (!existing.alternates) existing.alternates = [];
+        if (!existing.alternates.includes(value)) existing.alternates.push(value);
+      }
+    } else {
+      _answerBank[key] = { value, count: 1, lastUsed: Date.now() };
+    }
+  }
+
+  let _answerBankSaveTimeout = null;
   async function learnAnswer(label, value) {
     if (!label || !value) return;
     const key = normalizeKey(label);
     if (!key) return;
-    _answerBank[key] = value;
-    await st.set(SK.ANS, _answerBank);
+    learnAnswerSync(key, value);
+    // Debounced save to prevent rapid writes
+    if (_answerBankSaveTimeout) clearTimeout(_answerBankSaveTimeout);
+    _answerBankSaveTimeout = setTimeout(async () => {
+      await st.set(SK.ANS, _answerBank);
+      _answerBankSaveTimeout = null;
+    }, 500);
   }
 
   function getLearnedAnswer(label, el) {
     const candidates = [label, el?.name, el?.id, el?.placeholder, el?.getAttribute?.('aria-label')];
+    // 1. Exact key match (highest confidence)
     for (const c of candidates) {
       if (!c) continue;
       const k = normalizeKey(c);
-      if (_answerBank[k]) return _answerBank[k];
+      if (!k) continue;
+      const entry = _answerBank[k];
+      if (entry) return typeof entry === 'object' ? entry.value : entry;
     }
-    // Partial match
-    for (const c of candidates) {
-      if (!c) continue;
-      const k = normalizeKey(c);
-      for (const [bk, bv] of Object.entries(_answerBank)) {
-        if (k.includes(bk) || bk.includes(k)) return bv;
+    // 2. Safe partial match — require minimum key length AND significant overlap
+    // Avoids the "gender" matching "select your preferred gender identity" incorrectly
+    const queryKey = normalizeKey(label || '');
+    if (!queryKey || queryKey.length < 3) return '';
+    const queryWords = queryKey.split(' ').filter(w => w.length > 2);
+    if (!queryWords.length) return '';
+
+    let bestMatch = null, bestScore = 0;
+    for (const [bk, bv] of Object.entries(_answerBank)) {
+      if (bk.length < 3) continue;
+      const bankWords = bk.split(' ').filter(w => w.length > 2);
+      if (!bankWords.length) continue;
+
+      // Calculate word overlap score (both directions)
+      const forwardMatch = bankWords.filter(bw => queryWords.some(qw => qw === bw)).length;
+      const backwardMatch = queryWords.filter(qw => bankWords.some(bw => bw === qw)).length;
+      // Require at least 60% of the shorter word set to match
+      const minLen = Math.min(bankWords.length, queryWords.length);
+      const matchCount = Math.max(forwardMatch, backwardMatch);
+      const score = matchCount / minLen;
+
+      if (score >= 0.6 && matchCount >= 1 && score > bestScore) {
+        const entry = typeof bv === 'object' ? bv : { value: bv, count: 1 };
+        // Boost score by confidence
+        const confidenceBoost = Math.min(entry.count || 1, 10) / 10;
+        const finalScore = score + (confidenceBoost * 0.1);
+        if (finalScore > bestScore) {
+          bestScore = finalScore;
+          bestMatch = entry.value || bv;
+        }
       }
     }
-    return '';
+    return bestMatch || '';
   }
 
   // ===================== PROFILE =====================
@@ -637,19 +700,38 @@
     saveSavedResponses();
   }
 
-  function learnFromFilledFields() {
-    $$('input:not([type=hidden]):not([type=file]):not([type=submit]):not([type=button]),textarea,select')
-      .filter(el => isVisible(el) && hasFieldValue(el))
-      .forEach(el => {
-        const lbl = getLabel(el);
-        const val = el.tagName === 'SELECT' ? (el.options[el.selectedIndex]?.text || el.value) : el.value;
-        if (lbl && val && val.trim()) {
-          learnAnswer(lbl, val.trim());
-          // Also learn as saved response with keywords
-          const keywords = lbl.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
-          if (keywords.length >= 2) addSavedResponse(keywords, val.trim());
-        }
-      });
+  async function learnFromFilledFields() {
+    const fields = $$('input:not([type=hidden]):not([type=file]):not([type=submit]):not([type=button]),textarea,select')
+      .filter(el => isVisible(el) && hasFieldValue(el));
+    let learned = 0;
+    for (const el of fields) {
+      const lbl = getLabel(el);
+      const val = el.tagName === 'SELECT' ? (el.options[el.selectedIndex]?.text || el.value) : el.value;
+      if (!lbl || !val || !val.trim()) continue;
+      const trimVal = val.trim();
+      // Skip learning placeholder-like or empty-equivalent values
+      if (/^(select|choose|please|--|—|none|\.\.\.|…)$/i.test(trimVal)) continue;
+      // Skip learning sensitive fields
+      if (/ssn|social.?security|password|credit.?card|cvv|cvc|routing|iban|pan.?number/i.test(lbl)) continue;
+      await learnAnswer(lbl, trimVal);
+      // Also learn as saved response with keywords
+      const keywords = lbl.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+      if (keywords.length >= 2) addSavedResponse(keywords, trimVal);
+      learned++;
+    }
+    // Also learn from contenteditable fields
+    const editables = $$('[contenteditable="true"],.ql-editor,.ProseMirror').filter(el => isVisible(el) && el.textContent?.trim());
+    for (const ed of editables) {
+      const lbl = getLabel(ed) || ed.getAttribute('data-placeholder') || ed.getAttribute('aria-label') || '';
+      const val = ed.textContent?.trim();
+      if (lbl && val && val.length > 2 && val.length < 5000) {
+        await learnAnswer(lbl, val);
+        learned++;
+      }
+    }
+    // Flush answer bank to storage after batch learning
+    await st.set(SK.ANS, _answerBank);
+    if (learned > 0) LOG(`Learned from ${learned} filled fields`);
   }
 
   function exportSavedResponses() {
@@ -5639,12 +5721,16 @@
   // ===================== INIT =====================
   async function init() {
     if (window.self !== window.top) return;
-    await load(); await loadAnswerBank(); await loadSavedResponses(); await loadAppHistory(); await loadResumes(); await loadCustomDefaults(); await loadRateLimitDelay(); injectCSS(); buildUI(); setupKeyboardShortcuts();
+    await load(); await loadAnswerBank(); await loadSavedResponses(); await loadCustomQA(); await loadAppHistory(); await loadResumes(); await loadCustomDefaults(); await loadRateLimitDelay(); injectCSS(); buildUI(); setupKeyboardShortcuts();
     [500, 1500, 3000, 5000, 8000, 12000].forEach(ms => setTimeout(hideCredits, ms));
     observe(); showATSBadge(); renderQ(); updateStat(); updateCtrl();
     // Update answer bank count in UI
     const ansCntEl = document.getElementById('ua-ans-cnt');
-    if (ansCntEl) ansCntEl.textContent = `(${Object.keys(_answerBank).length} answers)`;
+    if (ansCntEl) {
+      const total = Object.keys(_answerBank).length;
+      const highConf = Object.values(_answerBank).filter(v => typeof v === 'object' && (v.count || 0) >= 3).length;
+      ansCntEl.textContent = `(${total} answers, ${highConf} confident)`;
+    }
 
     // OwlApply: Dual-auth support
     initDualAuth();
@@ -5660,6 +5746,47 @@
         showToast(`${ats} detected — ready to autofill`, 'info', 3000);
       }
     }
+
+    // ===== AUTO-LEARN SYSTEM =====
+    // Learn from fields when user fills them manually (blur = leaving a field)
+    document.addEventListener('focusout', (e) => {
+      const el = e.target;
+      if (!el || !el.tagName) return;
+      const tag = el.tagName;
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') return;
+      if (el.type === 'hidden' || el.type === 'file' || el.type === 'submit' || el.type === 'button' || el.type === 'password') return;
+      if (!hasFieldValue(el)) return;
+      const lbl = getLabel(el);
+      if (!lbl) return;
+      const val = tag === 'SELECT' ? (el.options[el.selectedIndex]?.text || el.value) : el.value;
+      if (val && val.trim() && val.trim().length > 1) {
+        // Skip sensitive fields
+        if (/ssn|social.?security|password|credit.?card|cvv|routing|iban/i.test(lbl)) return;
+        learnAnswer(lbl, val.trim());
+      }
+    }, true);
+
+    // Learn from page before user navigates away
+    window.addEventListener('beforeunload', () => {
+      learnFromFilledFields();
+    });
+
+    // Learn when URL changes (SPA navigation — multi-page forms)
+    let _lastUrl = location.href;
+    const urlObserver = new MutationObserver(() => {
+      if (location.href !== _lastUrl) {
+        // URL changed — learn from previous page's fields before they disappear
+        learnFromFilledFields();
+        _lastUrl = location.href;
+      }
+    });
+    urlObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
+
+    // Also listen for popstate (back/forward navigation)
+    window.addEventListener('popstate', () => {
+      learnFromFilledFields();
+      _lastUrl = location.href;
+    });
 
     const ats = detectATS();
     if (ats) {
