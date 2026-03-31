@@ -1,7 +1,9 @@
-// === ULTIMATE AUTOFILL ENHANCEMENT v11.0 (Jobright + OwlApply Fusion) ===
+// === ULTIMATE AUTOFILL ENHANCEMENT v12.0 (Jobright + OwlApply Fusion) ===
 // Accuracy-first: deliberate pacing, verification passes, robust matching, freeze-proof error handling
 // + OwlApply visual feedback, Greenhouse iframe detection, toast notifications, dual-auth
 // + Sidebar toggle, autofill fill/token/config bypass from v6.1
+// + Enhanced core fill: fuzzy select matching, React Select/combobox handling, multi-pass validation
+// + 60+ field patterns, URL/month/datetime/time support, rich text editor filling
 (function () {
   'use strict';
   const LOG = (...a) => console.log('[UA]', ...a);
