@@ -1,5 +1,6 @@
-// === ULTIMATE AUTOFILL ENHANCEMENT v10.2 ===
+// === ULTIMATE AUTOFILL ENHANCEMENT v11.0 (Jobright + OwlApply Fusion) ===
 // Accuracy-first: deliberate pacing, verification passes, robust matching, freeze-proof error handling
+// + OwlApply visual feedback, Greenhouse iframe detection, toast notifications, dual-auth
 // + Sidebar toggle, autofill fill/token/config bypass from v6.1
 (function () {
   'use strict';
@@ -14,6 +15,135 @@
       console.warn('[UA] Suppressed unhandled rejection:', msg);
     }
   });
+
+  // ===================== VISUAL FEEDBACK SYSTEM (OwlApply-inspired) =====================
+  function markFieldFilled(el) {
+    if (!el) return;
+    el.classList.remove('not-filled-by-jobright', 'filling-by-jobright');
+    el.classList.add('autofilled-by-jobright');
+    // Auto-remove highlight after 4s to avoid visual clutter
+    setTimeout(() => el.classList.remove('autofilled-by-jobright'), 4000);
+  }
+
+  function markFieldNotFilled(el) {
+    if (!el) return;
+    el.classList.remove('autofilled-by-jobright', 'filling-by-jobright');
+    el.classList.add('not-filled-by-jobright');
+  }
+
+  function markFieldFilling(el) {
+    if (!el) return;
+    el.classList.add('filling-by-jobright');
+  }
+
+  function markFieldVerified(el) {
+    if (!el) return;
+    el.classList.remove('autofilled-by-jobright', 'not-filled-by-jobright', 'filling-by-jobright');
+    el.classList.add('verified-by-jobright');
+    setTimeout(() => el.classList.remove('verified-by-jobright'), 6000);
+  }
+
+  // ===================== TOAST NOTIFICATION SYSTEM =====================
+  let _toastTimeout = null;
+  function showToast(message, type, duration) {
+    type = type || 'info';
+    duration = duration || 4000;
+    // Remove existing toast
+    const existing = document.querySelector('.jobright-toast');
+    if (existing) existing.remove();
+    if (_toastTimeout) clearTimeout(_toastTimeout);
+
+    const toast = document.createElement('div');
+    toast.className = `jobright-toast ${type}`;
+    toast.innerHTML = `<span>${message}</span><button class="jobright-toast-dismiss">&times;</button>`;
+    document.body.appendChild(toast);
+    toast.querySelector('.jobright-toast-dismiss').addEventListener('click', () => toast.remove());
+    _toastTimeout = setTimeout(() => { if (toast.parentNode) toast.remove(); }, duration);
+  }
+
+  // ===================== GREENHOUSE IFRAME DETECTION (from OwlApply) =====================
+  const GH_IFRAME_CONFIGS = [
+    { selector: 'iframe[src*="job-boards.greenhouse.io/embed/job_app"]', buttonClass: 'jobright-greenhouse-button' },
+    { selector: 'iframe[src*="boards.greenhouse.io/embed"]', buttonClass: 'jobright-greenhouse-button' },
+    { selector: 'iframe[src*="greenhouse.io"][src*="job_app"]', buttonClass: 'jobright-greenhouse-button' },
+  ];
+
+  function detectGreenhouseIframes() {
+    for (const config of GH_IFRAME_CONFIGS) {
+      if (document.querySelector(`.${config.buttonClass}`)) continue;
+      const iframe = document.querySelector(config.selector);
+      if (!iframe) continue;
+      const rect = iframe.getBoundingClientRect();
+      const btn = document.createElement('button');
+      btn.className = config.buttonClass;
+      btn.innerHTML = `<div style="display:flex;align-items:center;gap:6px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z" fill="#fff"/></svg>
+        <span>Open & Autofill</span>
+      </div>`;
+      btn.addEventListener('click', () => {
+        const src = iframe.src;
+        if (src) window.location.href = src;
+        btn.style.display = 'none';
+      });
+      btn.addEventListener('mouseenter', () => { btn.style.transform = 'translateY(-2px)'; btn.style.boxShadow = '0 6px 20px rgba(0,201,133,0.4)'; });
+      btn.addEventListener('mouseleave', () => { btn.style.transform = 'translateY(0)'; btn.style.boxShadow = '0 2px 8px rgba(0,201,133,0.3)'; });
+      // Position near the iframe
+      btn.style.cssText = `position:absolute;top:${rect.top + window.scrollY + 10}px;left:${rect.right - 160}px;z-index:999999;`;
+      document.body.appendChild(btn);
+      // Track iframe position on scroll/resize
+      let rafId = null;
+      const reposition = () => {
+        if (rafId === null) rafId = requestAnimationFrame(() => {
+          const r = iframe.getBoundingClientRect();
+          btn.style.top = `${r.top + window.scrollY + 10}px`;
+          btn.style.left = `${r.right - 160}px`;
+          rafId = null;
+        });
+      };
+      window.addEventListener('scroll', reposition, { passive: true });
+      window.addEventListener('resize', reposition, { passive: true });
+      LOG('Greenhouse iframe detected — overlay button placed');
+    }
+  }
+
+  // ===================== OWLAPPLY URL MATCHING PATTERNS =====================
+  // Extended from OwlApply's comprehensive job site detection
+  const OWLAPPLY_INCLUDE_PATTERNS = [
+    /[a-z]\.indeed\.com\//i, /[a-z]\.greenhouse\.io\//i, /contra\.com\//i,
+    /glassdoor\.com\//i, /codeally\.io\//i, /remoteok\.com\//i, /chaloner\.com\//i,
+    /job|hired|career|recruit|internships|apply|work-here/i,
+    /paycomonline\.net\/v4\/ats\/web\.php\/portal\//i,
+    /applitrack\.com\/.*\/.*\/.*\.aspx/i, /xing\.com\/jobs/i,
+  ];
+  const OWLAPPLY_EXCLUDE_PATTERNS = [
+    /applywithlinkedin/i, /captcha\.com/i, /driftt\.com/i, /stripe\.com/i,
+    /stripe\.network/i, /cedexis\.com/i, /demdex\.net/i, /protechts\.net/i,
+    /linkedin\.com\/(?!jobs($|\/))(?!job($|\/)).*$/i,
+    /\/(auth|login|register)(\/|$)/i, /localhost(?!.*\/job-board)/i,
+    /google\.com\/search/i, /instagram\.com/i, /facebook\.com/i,
+    /youtube\.com/i, /reddit\.com/i, /chatgpt\.com/i, /tiktok\.com/i,
+    /calendar\.google\.com/i, /teams\.microsoft\.com/i, /medium\.com/i,
+  ];
+  const OWLAPPLY_AUTH_EXCLUDE = [/accounts\.google\.com\//, /github\.com/];
+
+  function isJobPage() {
+    const url = window.location.href;
+    if (OWLAPPLY_AUTH_EXCLUDE.some(p => p.test(url))) return false;
+    if (OWLAPPLY_EXCLUDE_PATTERNS.some(p => p.test(url))) return false;
+    return OWLAPPLY_INCLUDE_PATTERNS.some(p => p.test(url));
+  }
+
+  // ===================== FILL STATISTICS TRACKER =====================
+  let _fillStats = { fieldsAttempted: 0, fieldsFilled: 0, fieldsSkipped: 0, fieldsVerified: 0 };
+
+  function resetFillStats() {
+    _fillStats = { fieldsAttempted: 0, fieldsFilled: 0, fieldsSkipped: 0, fieldsVerified: 0 };
+  }
+
+  function getFillSummary() {
+    const pct = _fillStats.fieldsAttempted > 0 ? Math.round((_fillStats.fieldsFilled / _fillStats.fieldsAttempted) * 100) : 0;
+    return `${_fillStats.fieldsFilled}/${_fillStats.fieldsAttempted} fields filled (${pct}%)`;
+  }
 
   // ===================== TOGGLE SIDEBAR ON ICON CLICK =====================
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -138,6 +268,23 @@
     }
     return _xhrSend.apply(this, arguments);
   };
+
+  // ===================== DUAL-AUTH COOKIE SUPPORT (OwlApply + Jobright) =====================
+  // Polls both Jobright and OwlApply for auth tokens, merges into local storage
+  function initDualAuth() {
+    const OWLAPPLY_URL = 'https://app.owlapply.com';
+    const JOBRIGHT_URL = 'https://app.jobright.ai';
+    // Try to read OwlApply auth state from cookies (via background script)
+    try {
+      chrome.runtime.sendMessage({ action: 'checkOwlApplyAuth' }, (resp) => {
+        if (resp?.token) {
+          st.set('ua_owlapply_token', resp.token);
+          LOG('OwlApply auth token synced');
+        }
+      });
+    } catch (_) { /* Extension context may not support this */ }
+    // Also check for Jobright auth via extension storage (already handled by background script)
+  }
 
   // ===================== CONFIG =====================
   const SK = { AA: 'ua_aa', Q: 'ua_q', QA: 'ua_qa', QP: 'ua_qp', POS: 'ua_pos', ANS: 'ua_answers', PROF: 'ua_profile' };
@@ -886,6 +1033,7 @@
     const p = await getProfile();
     await loadAnswerBank();
     let filled = 0;
+    resetFillStats();
 
     // Text inputs & textareas — only unfilled ones
     const inputs = $$('input:not([type=hidden]):not([type=file]):not([type=submit]):not([type=button]),textarea')
@@ -893,15 +1041,19 @@
 
     for (const inp of inputs) {
       const lbl = getLabel(inp);
-      if (!lbl) continue;
+      if (!lbl) { _fillStats.fieldsSkipped++; continue; }
+      _fillStats.fieldsAttempted++;
+      markFieldFilling(inp);
       const val = guessFieldValue(lbl, p, inp);
-      if (!val) continue;
+      if (!val) { markFieldNotFilled(inp); _fillStats.fieldsSkipped++; continue; }
       inp.focus();
       await sleep(100); // Stabilize focus before setting value
       nativeSet(inp, val);
       inp.dispatchEvent(new Event('input', { bubbles: true }));
       inp.dispatchEvent(new Event('change', { bubbles: true }));
+      markFieldFilled(inp);
       filled++;
+      _fillStats.fieldsFilled++;
       await sleep(200); // Accuracy-first: deliberate pacing between fields
     }
 
@@ -1011,11 +1163,19 @@
       if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true })); refilled++; }
     }
     if (refilled > 0) LOG(`Verification pass: re-filled ${refilled} fields that were cleared`);
+    _fillStats.fieldsVerified += refilled;
+
+    // Mark all successfully filled fields as verified
+    $$('input:not([type=hidden]):not([type=file]):not([type=submit]):not([type=button]),textarea,select')
+      .filter(el => isVisible(el) && hasFieldValue(el))
+      .forEach(el => markFieldVerified(el));
 
     // Learn from all filled fields for future use
     learnFromFilledFields();
 
-    LOG(`Fallback fill done: ${filled} fields filled, ${refilled} re-verified`);
+    const summary = getFillSummary();
+    LOG(`Fallback fill done: ${filled} fields filled, ${refilled} re-verified — ${summary}`);
+    if (filled > 0) showToast(`Autofill complete: ${summary}`, filled === _fillStats.fieldsAttempted ? 'success' : 'info', 3000);
     return filled + refilled;
   }
 
@@ -1235,13 +1395,17 @@
 
     if (result === 'next_page') {
       LOG('Navigated to next page — continuing multi-page flow');
+      showToast('Moving to next page...', 'info', 2000);
       await sleep(3000);
       await multiPageLoop();
     } else if (result === 'submitted') {
       LOG('Application submitted!');
       await learnFromPage();
       await sleep(2000);
-      if (checkSuccess()) LOG('Success confirmed!');
+      if (checkSuccess()) {
+        LOG('Success confirmed!');
+        showToast('Application submitted successfully!', 'success', 5000);
+      }
     }
   }
 
@@ -3351,6 +3515,7 @@
       const skipped = queue.filter(j => j.status === 'skipped').length;
       LOG(`Results: ${done} done, ${failed} failed, ${timedOut} timed out, ${skipped} skipped of ${queue.length} total`);
       if (qStats.totalTime > 0) LOG(`Average time: ${Math.round(qStats.totalTime / Math.max(done, 1) / 1000)}s per application`);
+      showToast(`Queue complete! ${done} applied, ${failed} failed of ${queue.length} total`, done > 0 ? 'success' : 'error', 8000);
       // Browser notification
       st.get('ua_notif_enabled').then(enabled => {
         if (enabled) sendNotification('Queue Complete!', `${done} applied, ${failed} failed, ${skipped} skipped of ${queue.length} total`);
@@ -3365,6 +3530,7 @@
     qActive = true; qPaused = false;
     qStats = { completed: 0, failed: 0, skipped: 0, timedOut: 0, totalTime: 0 };
     await st.set(SK.QA, true); await st.set(SK.QP, false); await saveStats();
+    showToast(`Starting queue: ${pending.length} jobs to apply`, 'info', 3000);
     updateCtrl(); goNext();
   }
   // LazyApply: resume from where we stopped (session resumption)
@@ -3885,7 +4051,7 @@
 #ua-drawer{position:fixed;display:none;width:380px;max-height:520px;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.14);flex-direction:column;overflow:hidden;border:1px solid #e5e7eb;z-index:2147483647;font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:#111827}
 #ua-drawer.open{display:flex}
 
-.ua-hdr{background:linear-gradient(135deg,#00a86b,#00c985);padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
+.ua-hdr{background:linear-gradient(135deg,#00815a,#00c985,#00a86b);padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
 .ua-hdr-t{font-size:15px;font-weight:700;color:#fff}
 .ua-hdr-sub{font-size:10px;color:rgba(255,255,255,.6);margin-top:1px}
 .ua-hdr-badge{background:rgba(255,255,255,.18);color:#fff;padding:3px 10px;border-radius:12px;font-size:10px;font-weight:700;letter-spacing:.3px}
@@ -4092,11 +4258,16 @@
     // --- Drawer ---
     const dw = document.createElement('div'); dw.id = 'ua-drawer';
     dw.innerHTML = `
-      <div class="ua-hdr"><div><div class="ua-hdr-t">Ultimate Autofill</div><div class="ua-hdr-sub">AI-Powered Job Applications</div></div><div style="display:flex;gap:6px;align-items:center"><button id="ua-dark-toggle" title="Dark Mode" style="background:none;border:none;cursor:pointer;font-size:16px;padding:2px">🌙</button><span class="ua-hdr-badge">UNLIMITED</span></div></div>
+      <div class="ua-hdr"><div><div class="ua-hdr-t">Jobright AI Autofill</div><div class="ua-hdr-sub">Enhanced with OwlApply Intelligence &bull; v3.0</div></div><div style="display:flex;gap:6px;align-items:center"><button id="ua-dark-toggle" title="Dark Mode" style="background:none;border:none;cursor:pointer;font-size:16px;padding:2px">🌙</button><span class="ua-hdr-badge">UNLIMITED</span></div></div>
       <div class="ua-body">
         <div class="ua-sec">
           <div class="ua-sec-t">Auto-Apply</div>
           <div class="ua-tog"><div><div class="ua-tog-l">Auto-Apply on ATS Pages</div><div class="ua-tog-d">Tailor → Autofill → Fill gaps → Submit</div></div><label class="ua-sw"><input type="checkbox" id="ua-aa"><span class="ua-sw-s"></span></label></div>
+          <div style="display:flex;gap:4px;margin-top:6px">
+            <button id="ua-quick-fill" style="flex:1;padding:6px;background:linear-gradient(135deg,#00c985,#059669);color:#fff;border:none;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer">Fill Now</button>
+            <button id="ua-quick-learn" style="flex:1;padding:6px;background:#f0fdf4;color:#059669;border:1px solid #d1fae5;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer">Learn Page</button>
+            <button id="ua-quick-verify" style="flex:1;padding:6px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer">Verify</button>
+          </div>
           <div id="ua-stat" class="ua-stat off"><span class="dot"></span><span id="ua-stat-t">Inactive</span></div>
         </div>
         <div class="ua-sec">
@@ -4109,6 +4280,16 @@
               <button id="ua-analyze" style="flex:1;padding:6px;background:#f3f4f6;color:#6b7280;border:none;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer">Analyze</button>
             </div>
           </div>
+        </div>
+        <div class="ua-sec">
+          <div class="ua-sec-t">Page Intelligence</div>
+          <div id="ua-page-intel" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+            <span class="ua-form-pill" id="ua-pi-job" style="opacity:0.4">Job Page</span>
+            <span class="ua-form-pill" id="ua-pi-ats" style="opacity:0.4">ATS</span>
+            <span class="ua-form-pill" id="ua-pi-iframe" style="opacity:0.4">Iframe</span>
+            <span class="ua-form-pill" id="ua-pi-form" style="opacity:0.4">Form</span>
+          </div>
+          <div id="ua-fill-summary" style="font-size:10px;color:#6b7280;margin-bottom:4px"></div>
         </div>
         <div class="ua-sec">
           <div class="ua-sec-t">Application History</div>
@@ -4290,7 +4471,33 @@
     tog.addEventListener('change', async e => {
       autoApply = e.target.checked; await st.set(SK.AA, autoApply); updateStat();
       if (autoApply && detectATS()) {
+        showToast('Auto-apply activated — starting...', 'info', 2000);
         dispatchATSAutomation();
+      }
+    });
+
+    // Quick Actions (OwlApply-inspired)
+    document.getElementById('ua-quick-fill')?.addEventListener('click', async () => {
+      showToast('Quick fill started...', 'info', 2000);
+      await fallbackFill();
+    });
+    document.getElementById('ua-quick-learn')?.addEventListener('click', async () => {
+      await learnFromPage();
+      await loadAnswerBank();
+      const cnt = Object.keys(_answerBank).length;
+      showToast(`Learned from page! ${cnt} answers in bank`, 'success', 3000);
+      const ansCntEl = document.getElementById('ua-ans-cnt');
+      if (ansCntEl) ansCntEl.textContent = `(${cnt} answers)`;
+    });
+    document.getElementById('ua-quick-verify')?.addEventListener('click', () => {
+      const analysis = getFormAnalysis();
+      const missing = getMissingRequired();
+      if (missing.length === 0 && analysis.filled === analysis.total) {
+        showToast('All fields verified — ready to submit!', 'success', 3000);
+      } else if (missing.length > 0) {
+        showToast(`${missing.length} required fields still empty: ${missing.slice(0, 3).join(', ')}`, 'error', 5000);
+      } else {
+        showToast(`${analysis.filled}/${analysis.total} fields filled`, 'info', 3000);
       }
     });
 
@@ -4443,12 +4650,37 @@
     }
     document.getElementById('ua-fill-now')?.addEventListener('click', async () => {
       LOG('Manual fill triggered via button');
+      showToast('Filling form...', 'info', 2000);
       await fallbackFill();
       updateFormAnalysis();
+      updatePageIntelligence();
     });
-    document.getElementById('ua-analyze')?.addEventListener('click', updateFormAnalysis);
-    setInterval(updateFormAnalysis, 5000);
-    setTimeout(updateFormAnalysis, 1500);
+    document.getElementById('ua-analyze')?.addEventListener('click', () => { updateFormAnalysis(); updatePageIntelligence(); });
+    setInterval(() => { updateFormAnalysis(); updatePageIntelligence(); }, 5000);
+    setTimeout(() => { updateFormAnalysis(); updatePageIntelligence(); }, 1500);
+
+    // ---- Page Intelligence (OwlApply-inspired) ----
+    function updatePageIntelligence() {
+      const piJob = document.getElementById('ua-pi-job');
+      const piAts = document.getElementById('ua-pi-ats');
+      const piIframe = document.getElementById('ua-pi-iframe');
+      const piForm = document.getElementById('ua-pi-form');
+      const fillSummary = document.getElementById('ua-fill-summary');
+
+      const isJob = isJobPage();
+      const ats = detectATS();
+      const hasIframe = !!document.querySelector('iframe[src*="greenhouse"],iframe[src*="lever"],iframe[src*="icims"],iframe[src*="workday"]');
+      const hasForm = $$('form,input:not([type=hidden]),textarea,select').filter(isVisible).length > 2;
+
+      if (piJob) { piJob.style.opacity = isJob ? '1' : '0.4'; piJob.className = `ua-form-pill ${isJob ? 'good' : ''}`; piJob.textContent = isJob ? 'Job Page' : 'Not Job Page'; }
+      if (piAts) { piAts.style.opacity = ats ? '1' : '0.4'; piAts.className = `ua-form-pill ${ats ? 'good' : ''}`; piAts.textContent = ats || 'No ATS'; }
+      if (piIframe) { piIframe.style.opacity = hasIframe ? '1' : '0.4'; piIframe.className = `ua-form-pill ${hasIframe ? 'warn' : ''}`; piIframe.textContent = hasIframe ? 'Iframe Detected' : 'No Iframe'; }
+      if (piForm) { piForm.style.opacity = hasForm ? '1' : '0.4'; piForm.className = `ua-form-pill ${hasForm ? 'good' : ''}`; piForm.textContent = hasForm ? 'Form Found' : 'No Form'; }
+
+      if (fillSummary && _fillStats.fieldsAttempted > 0) {
+        fillSummary.textContent = `Last fill: ${getFillSummary()} | ${_fillStats.fieldsVerified} verified`;
+      }
+    }
 
     // ---- Application History ----
     function getTimeAgo(ts) {
@@ -4774,6 +5006,23 @@
     if (/joinhandshake\.com/i.test(url)) return await handshakeAutomation();
     if (/governmentjobs\.com|usajobs\.gov/i.test(url)) return await usajobsAutomation();
     if (/eightfold\.ai/i.test(url)) return await eightfoldAutomation();
+    if (/recruitee\.com/i.test(url)) return await directAutofillFlow();
+    if (/pinpointhq\.com/i.test(url)) return await directAutofillFlow();
+    if (/comeet\.com/i.test(url)) return await directAutofillFlow();
+    if (/personio\.de/i.test(url)) return await directAutofillFlow();
+    if (/fountain\.com/i.test(url)) return await directAutofillFlow();
+    if (/teamtailor\.com/i.test(url)) return await directAutofillFlow();
+    if (/homerun\.co/i.test(url)) return await directAutofillFlow();
+    if (/zohorecruit\.com|recruit\.zoho/i.test(url)) return await directAutofillFlow();
+    if (/freshteam\.com/i.test(url)) return await directAutofillFlow();
+    if (/dover\.com|dover\.io/i.test(url)) return await directAutofillFlow();
+    if (/gem\.com/i.test(url)) return await directAutofillFlow();
+    if (/wellfound\.com/i.test(url)) return await directAutofillFlow();
+    if (/ziprecruiter\.com/i.test(url)) return await directAutofillFlow();
+    if (/dice\.com/i.test(url)) return await directAutofillFlow();
+    if (/monster\.com/i.test(url)) return await directAutofillFlow();
+    if (/careerbuilder\.com/i.test(url)) return await directAutofillFlow();
+    if (/simplyhired\.com/i.test(url)) return await directAutofillFlow();
     return await tailorFirstFlow();
   }
 
@@ -4787,12 +5036,28 @@
     const ansCntEl = document.getElementById('ua-ans-cnt');
     if (ansCntEl) ansCntEl.textContent = `(${Object.keys(_answerBank).length} answers)`;
 
+    // OwlApply: Dual-auth support
+    initDualAuth();
+
+    // OwlApply: Greenhouse iframe detection (runs on interval)
+    detectGreenhouseIframes();
+    setInterval(detectGreenhouseIframes, 3000);
+
+    // OwlApply: Job page auto-detection with toast
+    if (isJobPage()) {
+      const ats = detectATS();
+      if (ats) {
+        showToast(`${ats} detected — ready to autofill`, 'info', 3000);
+      }
+    }
+
     const ats = detectATS();
     if (ats) {
       LOG(`ATS detected: ${ats}`);
       // Auto-start ATS-specific flow when detected and auto-apply is on
       if (autoApply) {
         await sleep(2000);
+        showToast(`Auto-applying on ${ats}...`, 'info', 5000);
         await dispatchATSAutomation();
       }
     }
