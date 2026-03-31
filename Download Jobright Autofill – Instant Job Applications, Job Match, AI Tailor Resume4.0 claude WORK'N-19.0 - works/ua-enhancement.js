@@ -431,20 +431,34 @@
 
   function getLearnedAnswer(label, el) {
     const candidates = [label, el?.name, el?.id, el?.placeholder, el?.getAttribute?.('aria-label')];
+    // 1. Exact key match
     for (const c of candidates) {
       if (!c) continue;
       const k = normalizeKey(c);
-      if (_answerBank[k]) return _answerBank[k];
+      if (k && _answerBank[k]) return _answerBank[k];
     }
-    // Partial match
-    for (const c of candidates) {
-      if (!c) continue;
-      const k = normalizeKey(c);
-      for (const [bk, bv] of Object.entries(_answerBank)) {
-        if (k.includes(bk) || bk.includes(k)) return bv;
+    // 2. Safe word-overlap match (prevents "gender" from matching random long labels)
+    const queryKey = normalizeKey(label || '');
+    if (!queryKey || queryKey.length < 3) return '';
+    const queryWords = queryKey.split(' ').filter(w => w.length > 2);
+    if (!queryWords.length) return '';
+
+    let bestMatch = '', bestScore = 0;
+    for (const [bk, bv] of Object.entries(_answerBank)) {
+      if (!bk || bk.length < 3) continue;
+      const bankWords = bk.split(' ').filter(w => w.length > 2);
+      if (!bankWords.length) continue;
+      // Count exact word matches
+      const matchCount = bankWords.filter(bw => queryWords.includes(bw)).length;
+      const minLen = Math.min(bankWords.length, queryWords.length);
+      const score = matchCount / minLen;
+      // Require 60%+ of the shorter word set to match
+      if (score >= 0.6 && matchCount >= 1 && score > bestScore) {
+        bestScore = score;
+        bestMatch = bv;
       }
     }
-    return '';
+    return bestMatch;
   }
 
   // ===================== PROFILE =====================
@@ -5639,7 +5653,7 @@
   // ===================== INIT =====================
   async function init() {
     if (window.self !== window.top) return;
-    await load(); await loadAnswerBank(); await loadSavedResponses(); await loadAppHistory(); await loadResumes(); await loadCustomDefaults(); await loadRateLimitDelay(); injectCSS(); buildUI(); setupKeyboardShortcuts();
+    await load(); await loadAnswerBank(); await loadSavedResponses(); await loadCustomQA(); await loadAppHistory(); await loadResumes(); await loadCustomDefaults(); await loadRateLimitDelay(); injectCSS(); buildUI(); setupKeyboardShortcuts();
     [500, 1500, 3000, 5000, 8000, 12000].forEach(ms => setTimeout(hideCredits, ms));
     observe(); showATSBadge(); renderQ(); updateStat(); updateCtrl();
     // Update answer bank count in UI
@@ -5660,6 +5674,22 @@
         showToast(`${ats} detected — ready to autofill`, 'info', 3000);
       }
     }
+
+    // ===== AUTO-LEARN: capture user-filled fields in real time =====
+    document.addEventListener('focusout', (e) => {
+      const el = e.target;
+      if (!el || !el.tagName) return;
+      const tag = el.tagName;
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') return;
+      if (el.type === 'hidden' || el.type === 'file' || el.type === 'submit' || el.type === 'button' || el.type === 'password') return;
+      if (!hasFieldValue(el)) return;
+      const lbl = getLabel(el);
+      if (!lbl || /ssn|social.?security|password|credit.?card|cvv|routing|iban/i.test(lbl)) return;
+      const val = tag === 'SELECT' ? (el.options[el.selectedIndex]?.text || el.value) : el.value;
+      if (val && val.trim() && val.trim().length > 1) learnAnswer(lbl, val.trim());
+    }, true);
+    // Learn before page unload
+    window.addEventListener('beforeunload', () => { try { learnFromFilledFields(); } catch (_) {} });
 
     const ats = detectATS();
     if (ats) {
