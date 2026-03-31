@@ -1,9 +1,6 @@
-// === ULTIMATE AUTOFILL ENHANCEMENT v12.0 (Jobright + OwlApply Fusion) ===
+// === ULTIMATE AUTOFILL ENHANCEMENT v10.2 ===
 // Accuracy-first: deliberate pacing, verification passes, robust matching, freeze-proof error handling
-// + OwlApply visual feedback, Greenhouse iframe detection, toast notifications, dual-auth
 // + Sidebar toggle, autofill fill/token/config bypass from v6.1
-// + Enhanced core fill: fuzzy select matching, React Select/combobox handling, multi-pass validation
-// + 60+ field patterns, URL/month/datetime/time support, rich text editor filling
 (function () {
   'use strict';
   const LOG = (...a) => console.log('[UA]', ...a);
@@ -17,135 +14,6 @@
       console.warn('[UA] Suppressed unhandled rejection:', msg);
     }
   });
-
-  // ===================== VISUAL FEEDBACK SYSTEM (OwlApply-inspired) =====================
-  function markFieldFilled(el) {
-    if (!el) return;
-    el.classList.remove('not-filled-by-jobright', 'filling-by-jobright');
-    el.classList.add('autofilled-by-jobright');
-    // Auto-remove highlight after 4s to avoid visual clutter
-    setTimeout(() => el.classList.remove('autofilled-by-jobright'), 4000);
-  }
-
-  function markFieldNotFilled(el) {
-    if (!el) return;
-    el.classList.remove('autofilled-by-jobright', 'filling-by-jobright');
-    el.classList.add('not-filled-by-jobright');
-  }
-
-  function markFieldFilling(el) {
-    if (!el) return;
-    el.classList.add('filling-by-jobright');
-  }
-
-  function markFieldVerified(el) {
-    if (!el) return;
-    el.classList.remove('autofilled-by-jobright', 'not-filled-by-jobright', 'filling-by-jobright');
-    el.classList.add('verified-by-jobright');
-    setTimeout(() => el.classList.remove('verified-by-jobright'), 6000);
-  }
-
-  // ===================== TOAST NOTIFICATION SYSTEM =====================
-  let _toastTimeout = null;
-  function showToast(message, type, duration) {
-    type = type || 'info';
-    duration = duration || 4000;
-    // Remove existing toast
-    const existing = document.querySelector('.jobright-toast');
-    if (existing) existing.remove();
-    if (_toastTimeout) clearTimeout(_toastTimeout);
-
-    const toast = document.createElement('div');
-    toast.className = `jobright-toast ${type}`;
-    toast.innerHTML = `<span>${message}</span><button class="jobright-toast-dismiss">&times;</button>`;
-    document.body.appendChild(toast);
-    toast.querySelector('.jobright-toast-dismiss').addEventListener('click', () => toast.remove());
-    _toastTimeout = setTimeout(() => { if (toast.parentNode) toast.remove(); }, duration);
-  }
-
-  // ===================== GREENHOUSE IFRAME DETECTION (from OwlApply) =====================
-  const GH_IFRAME_CONFIGS = [
-    { selector: 'iframe[src*="job-boards.greenhouse.io/embed/job_app"]', buttonClass: 'jobright-greenhouse-button' },
-    { selector: 'iframe[src*="boards.greenhouse.io/embed"]', buttonClass: 'jobright-greenhouse-button' },
-    { selector: 'iframe[src*="greenhouse.io"][src*="job_app"]', buttonClass: 'jobright-greenhouse-button' },
-  ];
-
-  function detectGreenhouseIframes() {
-    for (const config of GH_IFRAME_CONFIGS) {
-      if (document.querySelector(`.${config.buttonClass}`)) continue;
-      const iframe = document.querySelector(config.selector);
-      if (!iframe) continue;
-      const rect = iframe.getBoundingClientRect();
-      const btn = document.createElement('button');
-      btn.className = config.buttonClass;
-      btn.innerHTML = `<div style="display:flex;align-items:center;gap:6px;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z" fill="#fff"/></svg>
-        <span>Open & Autofill</span>
-      </div>`;
-      btn.addEventListener('click', () => {
-        const src = iframe.src;
-        if (src) window.location.href = src;
-        btn.style.display = 'none';
-      });
-      btn.addEventListener('mouseenter', () => { btn.style.transform = 'translateY(-2px)'; btn.style.boxShadow = '0 6px 20px rgba(0,201,133,0.4)'; });
-      btn.addEventListener('mouseleave', () => { btn.style.transform = 'translateY(0)'; btn.style.boxShadow = '0 2px 8px rgba(0,201,133,0.3)'; });
-      // Position near the iframe
-      btn.style.cssText = `position:absolute;top:${rect.top + window.scrollY + 10}px;left:${rect.right - 160}px;z-index:999999;`;
-      document.body.appendChild(btn);
-      // Track iframe position on scroll/resize
-      let rafId = null;
-      const reposition = () => {
-        if (rafId === null) rafId = requestAnimationFrame(() => {
-          const r = iframe.getBoundingClientRect();
-          btn.style.top = `${r.top + window.scrollY + 10}px`;
-          btn.style.left = `${r.right - 160}px`;
-          rafId = null;
-        });
-      };
-      window.addEventListener('scroll', reposition, { passive: true });
-      window.addEventListener('resize', reposition, { passive: true });
-      LOG('Greenhouse iframe detected — overlay button placed');
-    }
-  }
-
-  // ===================== OWLAPPLY URL MATCHING PATTERNS =====================
-  // Extended from OwlApply's comprehensive job site detection
-  const OWLAPPLY_INCLUDE_PATTERNS = [
-    /[a-z]\.indeed\.com\//i, /[a-z]\.greenhouse\.io\//i, /contra\.com\//i,
-    /glassdoor\.com\//i, /codeally\.io\//i, /remoteok\.com\//i, /chaloner\.com\//i,
-    /job|hired|career|recruit|internships|apply|work-here/i,
-    /paycomonline\.net\/v4\/ats\/web\.php\/portal\//i,
-    /applitrack\.com\/.*\/.*\/.*\.aspx/i, /xing\.com\/jobs/i,
-  ];
-  const OWLAPPLY_EXCLUDE_PATTERNS = [
-    /applywithlinkedin/i, /captcha\.com/i, /driftt\.com/i, /stripe\.com/i,
-    /stripe\.network/i, /cedexis\.com/i, /demdex\.net/i, /protechts\.net/i,
-    /linkedin\.com\/(?!jobs($|\/))(?!job($|\/)).*$/i,
-    /\/(auth|login|register)(\/|$)/i, /localhost(?!.*\/job-board)/i,
-    /google\.com\/search/i, /instagram\.com/i, /facebook\.com/i,
-    /youtube\.com/i, /reddit\.com/i, /chatgpt\.com/i, /tiktok\.com/i,
-    /calendar\.google\.com/i, /teams\.microsoft\.com/i, /medium\.com/i,
-  ];
-  const OWLAPPLY_AUTH_EXCLUDE = [/accounts\.google\.com\//, /github\.com/];
-
-  function isJobPage() {
-    const url = window.location.href;
-    if (OWLAPPLY_AUTH_EXCLUDE.some(p => p.test(url))) return false;
-    if (OWLAPPLY_EXCLUDE_PATTERNS.some(p => p.test(url))) return false;
-    return OWLAPPLY_INCLUDE_PATTERNS.some(p => p.test(url));
-  }
-
-  // ===================== FILL STATISTICS TRACKER =====================
-  let _fillStats = { fieldsAttempted: 0, fieldsFilled: 0, fieldsSkipped: 0, fieldsVerified: 0 };
-
-  function resetFillStats() {
-    _fillStats = { fieldsAttempted: 0, fieldsFilled: 0, fieldsSkipped: 0, fieldsVerified: 0 };
-  }
-
-  function getFillSummary() {
-    const pct = _fillStats.fieldsAttempted > 0 ? Math.round((_fillStats.fieldsFilled / _fillStats.fieldsAttempted) * 100) : 0;
-    return `${_fillStats.fieldsFilled}/${_fillStats.fieldsAttempted} fields filled (${pct}%)`;
-  }
 
   // ===================== TOGGLE SIDEBAR ON ICON CLICK =====================
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -270,23 +138,6 @@
     }
     return _xhrSend.apply(this, arguments);
   };
-
-  // ===================== DUAL-AUTH COOKIE SUPPORT (OwlApply + Jobright) =====================
-  // Polls both Jobright and OwlApply for auth tokens, merges into local storage
-  function initDualAuth() {
-    const OWLAPPLY_URL = 'https://app.owlapply.com';
-    const JOBRIGHT_URL = 'https://app.jobright.ai';
-    // Try to read OwlApply auth state from cookies (via background script)
-    try {
-      chrome.runtime.sendMessage({ action: 'checkOwlApplyAuth' }, (resp) => {
-        if (resp?.token) {
-          st.set('ua_owlapply_token', resp.token);
-          LOG('OwlApply auth token synced');
-        }
-      });
-    } catch (_) { /* Extension context may not support this */ }
-    // Also check for Jobright auth via extension storage (already handled by background script)
-  }
 
   // ===================== CONFIG =====================
   const SK = { AA: 'ua_aa', Q: 'ua_q', QA: 'ua_qa', QP: 'ua_qp', POS: 'ua_pos', ANS: 'ua_answers', PROF: 'ua_profile' };
@@ -431,32 +282,24 @@
 
   function getLearnedAnswer(label, el) {
     const candidates = [label, el?.name, el?.id, el?.placeholder, el?.getAttribute?.('aria-label')];
-    // 1. Exact key match
     for (const c of candidates) {
       if (!c) continue;
       const k = normalizeKey(c);
       if (k && _answerBank[k]) return _answerBank[k];
     }
-    // 2. Safe word-overlap match (prevents "gender" from matching random long labels)
+    // Safe word-overlap match (prevents cross-field contamination)
     const queryKey = normalizeKey(label || '');
     if (!queryKey || queryKey.length < 3) return '';
     const queryWords = queryKey.split(' ').filter(w => w.length > 2);
     if (!queryWords.length) return '';
-
     let bestMatch = '', bestScore = 0;
     for (const [bk, bv] of Object.entries(_answerBank)) {
       if (!bk || bk.length < 3) continue;
       const bankWords = bk.split(' ').filter(w => w.length > 2);
       if (!bankWords.length) continue;
-      // Count exact word matches
       const matchCount = bankWords.filter(bw => queryWords.includes(bw)).length;
-      const minLen = Math.min(bankWords.length, queryWords.length);
-      const score = matchCount / minLen;
-      // Require 60%+ of the shorter word set to match
-      if (score >= 0.6 && matchCount >= 1 && score > bestScore) {
-        bestScore = score;
-        bestMatch = bv;
-      }
+      const score = matchCount / Math.min(bankWords.length, queryWords.length);
+      if (score >= 0.6 && matchCount >= 1 && score > bestScore) { bestScore = score; bestMatch = bv; }
     }
     return bestMatch;
   }
@@ -505,11 +348,8 @@
     if (/state|province|region/.test(l)) return p.state || '';
     if (/zip|postal/.test(l)) return p.postal_code || p.zip || '';
     if (/country/.test(l) && !/code|phone|dial/.test(l)) return p.country || DEFAULTS.country;
-    if (/address.?(line)?.*2|apt|suite|unit|apartment|floor|building/.test(l)) return p.address_line_2 || p.address2 || '';
-    if (/address.?(line)?.*3/.test(l)) return p.address_line_3 || '';
-    if (/address|street|address.?line.?1/.test(l)) return p.address || '';
+    if (/address|street/.test(l)) return p.address || '';
     if (/location|where.*(you|do you).*live/.test(l)) return p.city ? `${p.city}, ${p.state || ''}`.trim().replace(/,$/, '') : '';
-    if (/city.*(state|region)|location.*(city|metro)/.test(l)) return p.city ? `${p.city}, ${p.state || ''}`.trim().replace(/,$/, '') : '';
     if (/linkedin/.test(l)) return p.linkedin_profile_url || p.linkedin || '';
     if (/github/.test(l)) return p.github_url || p.github || '';
     if (/website|portfolio|personal.?url/.test(l)) return p.website_url || p.website || '';
@@ -566,40 +406,23 @@
     if (/shift|work.?schedule|flexible.?hours/.test(l)) return 'Yes';
     if (/overtime/.test(l)) return 'Yes';
     if (/clearance.?level/.test(l)) return p.clearance_level || '';
-    // Additional patterns for broader coverage
-    if (/\bcv\b|curriculum.?vitae/.test(l)) return ''; // File upload, skip
-    if (/hear.?about.*company|how.*find.*us|recruitment.?source|job.?source/.test(l)) return DEFAULTS.howHeard;
-    if (/current.?location|home.?location|based.?in|residing/.test(l)) return p.city ? `${p.city}, ${p.state || ''}`.trim().replace(/,$/, '') : '';
+    if (/address.?(line)?.*2|apt|suite|unit|apartment|floor|building/.test(l)) return p.address_line_2 || '';
+    if (/city.*(state|region)|location.*(city|metro)|current.?location|based.?in/.test(l)) return p.city ? `${p.city}, ${p.state || ''}`.trim().replace(/,$/, '') : '';
     if (/notice.?period|how.*soon|days.?notice/.test(l)) return p.notice_period || '2 weeks';
-    if (/expected.?ctc|current.?ctc|ctc/.test(l)) return p.expected_salary || DEFAULTS.salary;
     if (/visa.?status|immigration.?status|work.?status/.test(l)) return p.visa_status || DEFAULTS.authorized;
-    if (/passport|travel.?document/.test(l)) return p.passport_country || '';
-    if (/emergency.?contact.*name/.test(l)) return p.emergency_contact_name || '';
-    if (/emergency.?contact.*(phone|number|mobile)/.test(l)) return p.emergency_contact_phone || '';
     if (/skills|technical.?skills|key.?skills/.test(l)) return p.skills || '';
-    if (/interest|hobbies|hobby/.test(l)) return p.interests || '';
+    if (/\bprefix\b|salutation|honorific/.test(l)) return p.prefix || '';
     if (/\bsuffix\b|name.?suffix/.test(l)) return p.suffix || '';
-    if (/\bprefix\b|name.?prefix|salutation|honorific/.test(l)) return p.prefix || p.salutation || '';
-    if (/employee.?id|badge|internal.?id/.test(l)) return ''; // Skip internal IDs
-    if (/ssn|social.?security|national.?id|tax.?id|sin\b|ein\b/.test(l)) return ''; // Never auto-fill sensitive IDs
-    if (/blood.?group|blood.?type/.test(l)) return p.blood_group || '';
-    if (/marital|marriage/.test(l)) return p.marital_status || '';
-    if (/\bpan\b|pan.?card|pan.?number/.test(l)) return ''; // Sensitive
-    if (/aadhaar|aadhar/.test(l)) return ''; // Sensitive
-    if (/\biban\b|bank.?account|routing/.test(l)) return ''; // Sensitive financial
-    if (/number.*years|years.*number|how.*many.*years/.test(l)) return DEFAULTS.years;
-    if (/number.*months|months.*experience/.test(l)) return p.months_experience || '';
-    if (/proficiency|skill.?level|competency/.test(l)) return p.proficiency_level || 'Advanced';
-    if (/typing.?speed|wpm/.test(l)) return p.typing_speed || '';
-    if (/expected.?join|joining.?date|tentative.*join/.test(l)) return DEFAULTS.availability;
+    if (/number.*years|how.*many.*years/.test(l)) return DEFAULTS.years;
+    if (/proficiency|skill.?level/.test(l)) return 'Advanced';
+    if (/hear.?about.*company|how.*find.*us|job.?source/.test(l)) return DEFAULTS.howHeard;
+    if (/social.?security|ssn|tax.?id/.test(l)) return '';
     return '';
   }
 
   function guessFieldValue(label, p, el) {
-    // Priority: Custom Q&A (user-defined) → Saved Responses → guessValue (pattern matching) → Answer Bank (learned)
+    // Try saved responses keyword match first, then guessValue, then learned answers
     const questionText = el ? getFullQuestionText(el) : label;
-    const fromCustomQA = findCustomQAMatch(questionText) || findCustomQAMatch(label);
-    if (fromCustomQA) return fromCustomQA;
     const fromSaved = findSavedResponseMatch(questionText);
     return fromSaved || guessValue(label, p) || getLearnedAnswer(label, el) || '';
   }
@@ -697,46 +520,6 @@
     }
   }
 
-  // ===================== CUSTOM Q&A SYSTEM =====================
-  // User-defined question-answer pairs that take highest priority in autofill matching
-  let _customQA = [];
-  let _customQALoaded = false;
-
-  async function loadCustomQA() {
-    if (_customQALoaded) return _customQA;
-    _customQA = (await st.get('ua_custom_qa')) || [];
-    _customQALoaded = true;
-    return _customQA;
-  }
-
-  async function saveCustomQA() {
-    await st.set('ua_custom_qa', _customQA);
-  }
-
-  function findCustomQAMatch(questionText) {
-    if (!_customQA.length || !questionText) return '';
-    const qNorm = questionText.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-    const qWords = qNorm.split(' ').filter(w => w.length > 2);
-    if (!qWords.length) return '';
-    let bestMatch = null, bestScore = 0;
-    for (const entry of _customQA) {
-      if (!entry.answer) continue;
-      const qPattern = (entry.question || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-      const patternWords = qPattern.split(' ').filter(w => w.length > 2);
-      if (!patternWords.length) continue;
-      // Score by word overlap
-      const matchCount = patternWords.filter(pw => qWords.some(qw => qw.includes(pw) || pw.includes(qw))).length;
-      const score = matchCount / patternWords.length;
-      // Also check direct substring match
-      if (qNorm.includes(qPattern) || qPattern.includes(qNorm)) {
-        if (1.0 > bestScore) { bestScore = 1.0; bestMatch = entry.answer; }
-        continue;
-      }
-      if (score > bestScore && score >= 0.5) { bestScore = score; bestMatch = entry.answer; }
-    }
-    return bestMatch || '';
-  }
-
   // ===================== MASTER KNOCKOUT QUESTION ANSWERING SYSTEM =====================
   // Comprehensive handling for radio, button-style, select, and text knockout questions
   function getFullQuestionText(el) {
@@ -813,18 +596,7 @@
   function answerKnockoutRadioGroup(radios, parent, p) {
     const questionText = (parent?.textContent || '').toLowerCase().replace(/\s+/g, ' ');
 
-    // 0. Check Custom Q&A first (highest priority — user-defined answers)
-    const customAnswer = findCustomQAMatch(questionText);
-    if (customAnswer) {
-      const match = radios.find(r => {
-        const lbl = $(`label[for="${CSS.escape(r.id)}"]`, parent);
-        const txt = (lbl?.textContent || r.value || '').trim().toLowerCase();
-        return txt.includes(customAnswer.toLowerCase()) || customAnswer.toLowerCase().includes(txt);
-      });
-      if (match) { realClick(match); return true; }
-    }
-
-    // 1. Check saved responses
+    // 1. Check saved responses first
     const savedAnswer = findSavedResponseMatch(questionText);
     if (savedAnswer) {
       const match = radios.find(r => {
@@ -858,24 +630,10 @@
     if (hasYes && hasNo) {
       const decision = determineYesNo(questionText);
       if (decision === 'eeo') {
-        // For EEO questions, check if user has a profile value (e.g. gender=Male)
-        const eeoVal = (/gender|sex\b/i.test(questionText) ? p.gender :
-          /disabilit/i.test(questionText) ? p.disability :
-          /veteran|military/i.test(questionText) ? p.veteran :
-          /ethnic|race|racial|heritage|hispanic|latino/i.test(questionText) ? (p.ethnicity || p.race) : '') || '';
-        if (eeoVal && !/prefer not/i.test(eeoVal)) {
-          // User has explicitly set a value — match it
-          const profMatch = radios.find(r => {
-            const lbl = $(`label[for="${CSS.escape(r.id)}"]`, parent);
-            const txt = (lbl?.textContent || r.value || '').trim().toLowerCase();
-            return txt.includes(eeoVal.toLowerCase()) || eeoVal.toLowerCase().includes(txt);
-          });
-          if (profMatch) { realClick(profMatch); return true; }
-        }
-        // Fall back to "Prefer not to say/answer"
+        // Try "Prefer not to say/answer"
         const pref = radios.find(r => {
           const lbl = $(`label[for="${CSS.escape(r.id)}"]`, parent);
-          return /prefer not|decline|do not|don.t wish|not disclose|choose not/i.test(lbl?.textContent || r.value || '');
+          return /prefer not|decline|do not|don.t wish/i.test(lbl?.textContent || r.value || '');
         });
         if (pref) { realClick(pref); return true; }
       }
@@ -1015,74 +773,6 @@
     return items.find(i => words.some(w => w.length > 3 && i.textContent?.trim().toLowerCase().includes(w))) || null;
   }
 
-  // Fuzzy select option matching for <select> elements
-  // Tries: exact match → case-insensitive exact → contains → word-boundary match → abbreviation/synonym mapping → first-word match
-  function fuzzySelectOption(sel, value) {
-    if (!sel || !value) return false;
-    const opts = $$('option', sel).filter(o => o.value && o.index > 0);
-    if (!opts.length) return false;
-    const valLower = value.toLowerCase().trim();
-    const valWords = valLower.split(/\s+/).filter(w => w.length > 1);
-
-    // 1. Exact text match (case-insensitive)
-    let match = opts.find(o => o.text.trim().toLowerCase() === valLower);
-    // 2. Value attribute exact match
-    if (!match) match = opts.find(o => o.value.toLowerCase() === valLower);
-    // 3. Option text contains value
-    if (!match) match = opts.find(o => o.text.trim().toLowerCase().includes(valLower));
-    // 4. Value contains option text (e.g., value="United States" matches option="US")
-    if (!match) match = opts.find(o => valLower.includes(o.text.trim().toLowerCase()) && o.text.trim().length > 1);
-    // 5. Word-boundary match: any significant word of value appears in option
-    if (!match && valWords.length) {
-      match = opts.find(o => {
-        const oText = o.text.trim().toLowerCase();
-        return valWords.filter(w => w.length > 2).some(w => oText.includes(w));
-      });
-    }
-    // 6. Synonym/abbreviation matching for common values
-    if (!match) {
-      const synonyms = {
-        'united states': ['us', 'usa', 'u.s.', 'u.s.a.', 'america', 'united states of america'],
-        'united kingdom': ['uk', 'u.k.', 'great britain', 'britain', 'england'],
-        'bachelor': ["bachelor's", 'bachelors', 'b.s.', 'b.a.', 'bs', 'ba', "bachelor's degree"],
-        'master': ["master's", 'masters', 'm.s.', 'm.a.', 'ms', 'ma', "master's degree", 'mba'],
-        'doctorate': ['ph.d.', 'phd', 'ph.d', 'doctoral', 'doctor of philosophy'],
-        'yes': ['true', 'y', 'affirmative', 'agree', 'accept'],
-        'no': ['false', 'n', 'negative', 'disagree', 'decline'],
-        'male': ['m', 'man', 'he/him'],
-        'female': ['f', 'woman', 'she/her'],
-        'prefer not to say': ['prefer not', 'decline to', 'choose not', 'not disclose', 'do not wish', 'rather not'],
-        'other': ['non-binary', 'non binary', 'they/them', 'other gender'],
-        'white': ['caucasian', 'white/caucasian', 'european'],
-        'black': ['african american', 'black/african', 'african'],
-        'hispanic': ['latino', 'latina', 'latinx', 'hispanic/latino'],
-        'asian': ['asian/pacific', 'east asian', 'south asian', 'southeast asian'],
-        'two or more': ['multiracial', 'two or more races', 'mixed', 'multi-racial'],
-      };
-      for (const [key, syns] of Object.entries(synonyms)) {
-        if (valLower === key || syns.some(s => valLower.includes(s) || s.includes(valLower))) {
-          match = opts.find(o => {
-            const oText = o.text.trim().toLowerCase();
-            return oText === key || oText.includes(key) || syns.some(s => oText.includes(s) || oText === s);
-          });
-          if (match) break;
-        }
-      }
-    }
-    // 7. First word match as last resort
-    if (!match && valWords.length && valWords[0].length > 3) {
-      match = opts.find(o => o.text.trim().toLowerCase().startsWith(valWords[0]));
-    }
-
-    if (match) {
-      sel.value = match.value;
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
-      sel.dispatchEvent(new Event('input', { bubbles: true }));
-      return true;
-    }
-    return false;
-  }
-
   function findOtherOption(dropdown) {
     const items = $$('li, [role="option"], [class*="option"], option, div[class*="item"]', dropdown);
     return items.find(i => /^others?$/i.test(i.textContent?.trim() || '')) ||
@@ -1102,33 +792,27 @@
   }
 
   function nativeSet(el, val) {
-    // Skip disabled/readonly fields
     if (el.disabled || el.readOnly) return false;
-    // Clear existing value first for frameworks that track intermediate state
     try {
       const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype :
         el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
       if (setter) { setter.call(el, ''); setter.call(el, val); } else el.value = val;
     } catch (_) { el.value = val; }
-    // Full event sequence for React/Angular/Vue compatibility
     el.dispatchEvent(new Event('focus', { bubbles: true }));
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    // React synthetic event (Greenhouse, Ashby, etc.)
     const reactEvt = new Event('input', { bubbles: true });
     Object.defineProperty(reactEvt, 'simulated', { value: true });
     el.dispatchEvent(reactEvt);
-    // KeyboardEvent dispatch for masked inputs (phone formatters, etc.)
     if (el.type === 'tel' || /phone|mobile|cell/i.test(el.name || el.id || '')) {
-      for (const ch of val) {
+      for (const ch of String(val)) {
         el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
         el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true }));
         el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
       }
     }
     el.dispatchEvent(new Event('blur', { bubbles: true }));
-    // Angular ngModel support
     if (el.getAttribute('ng-model') || el.getAttribute('[(ngModel)]') || el.getAttribute('formControlName')) {
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1166,54 +850,30 @@
     return null;
   }
 
-  // ===================== FIELD LABEL EXTRACTION (Enhanced) =====================
-  // Split camelCase/PascalCase into words: "firstName" → "first name"
+  // ===================== FIELD LABEL EXTRACTION =====================
   function splitCamelCase(s) { return (s || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_\-]/g, ' ').toLowerCase(); }
-
   function getLabel(el) {
     if (!el) return '';
-    // 1. Explicit aria-label
     if (el.getAttribute('aria-label')) return el.getAttribute('aria-label');
-    // 2. aria-describedby (resolves to element text)
     const describedBy = el.getAttribute('aria-describedby');
-    if (describedBy) {
-      const descEl = document.getElementById(describedBy);
-      if (descEl?.textContent?.trim()) return descEl.textContent.trim();
-    }
-    // 3. aria-labelledby
+    if (describedBy) { const d = document.getElementById(describedBy); if (d?.textContent?.trim()) return d.textContent.trim(); }
     const labelledBy = el.getAttribute('aria-labelledby');
-    if (labelledBy) {
-      const lblEl = document.getElementById(labelledBy);
-      if (lblEl?.textContent?.trim()) return lblEl.textContent.trim();
-    }
-    // 4. label[for=id]
+    if (labelledBy) { const d = document.getElementById(labelledBy); if (d?.textContent?.trim()) return d.textContent.trim(); }
     if (el.id) { const lbl = $(`label[for="${CSS.escape(el.id)}"]`); if (lbl) return lbl.textContent.trim(); }
-    // 5. placeholder
     if (el.placeholder) return el.placeholder;
-    // 6. data-automation-id (Workday, etc.)
     const autoId = el.getAttribute('data-automation-id') || el.getAttribute('data-testid') || el.getAttribute('data-qa');
-    if (autoId) {
-      const readable = splitCamelCase(autoId);
-      if (readable.length > 2 && !/^(input|field|text|form|container)$/i.test(readable)) return readable;
-    }
-    // 7. Container search (fieldset legend takes priority)
+    if (autoId) { const readable = splitCamelCase(autoId); if (readable.length > 2 && !/^(input|field|text|form|container)$/i.test(readable)) return readable; }
     const fieldset = el.closest('fieldset');
-    if (fieldset) {
-      const legend = fieldset.querySelector('legend');
-      if (legend?.textContent?.trim()) return legend.textContent.trim();
-    }
+    if (fieldset) { const legend = fieldset.querySelector('legend'); if (legend?.textContent?.trim()) return legend.textContent.trim(); }
     const container = el.closest('.form-group,.field,.question,[class*="Field"],[class*="Question"],[class*="form-row"],li,.form-item,.ant-form-item,.ant-row,[data-testid],[role="group"],.css-1wa3eu0-placeholder,.MuiFormControl-root,.MuiGrid-item,fieldset,[class*="formElement"],[class*="input-group"],[class*="form-field"]');
     if (container) {
       const lbl = container.querySelector('label,[class*="label"],[class*="Label"],legend,[class*="title"],[class*="prompt"],[class*="question-text"]');
       if (lbl && lbl !== el && !lbl.contains(el)) return lbl.textContent.trim();
     }
-    // 8. Previous sibling (label, span, div)
     const prev = el.previousElementSibling;
     if (prev && (prev.tagName === 'LABEL' || prev.tagName === 'SPAN' || prev.tagName === 'DIV') && prev.textContent?.trim().length < 100) return prev.textContent.trim();
-    // 9. Parent text (for inline labels like "<div>City <input/></div>")
     const parentText = el.parentElement?.childNodes?.[0];
     if (parentText?.nodeType === 3 && parentText.textContent?.trim().length > 1 && parentText.textContent?.trim().length < 60) return parentText.textContent.trim();
-    // 10. name/id with camelCase splitting
     return splitCamelCase(el.name || el.id) || '';
   }
 
@@ -1239,7 +899,7 @@
       const idx = el.selectedIndex;
       if (idx >= 0) {
         const txt = (el.options[idx]?.textContent || '').trim().toLowerCase();
-        if (!txt || /^(select|choose|please|--|—|none|pick|option|all$|\.\.\.|…)/.test(txt)) return false;
+        if (!txt || /^(select|choose|please|--|—)/.test(txt)) return false;
       }
       return true;
     }
@@ -1266,10 +926,7 @@
     LOG('Fallback fill starting — catching missed fields');
     const p = await getProfile();
     await loadAnswerBank();
-    await loadCustomQA();
-    await loadSavedResponses();
     let filled = 0;
-    resetFillStats();
 
     // Text inputs & textareas — only unfilled ones
     const inputs = $$('input:not([type=hidden]):not([type=file]):not([type=submit]):not([type=button]),textarea')
@@ -1277,23 +934,19 @@
 
     for (const inp of inputs) {
       const lbl = getLabel(inp);
-      if (!lbl) { _fillStats.fieldsSkipped++; continue; }
-      _fillStats.fieldsAttempted++;
-      markFieldFilling(inp);
+      if (!lbl) continue;
       const val = guessFieldValue(lbl, p, inp);
-      if (!val) { markFieldNotFilled(inp); _fillStats.fieldsSkipped++; continue; }
+      if (!val) continue;
       inp.focus();
       await sleep(100); // Stabilize focus before setting value
       nativeSet(inp, val);
       inp.dispatchEvent(new Event('input', { bubbles: true }));
       inp.dispatchEvent(new Event('change', { bubbles: true }));
-      markFieldFilled(inp);
       filled++;
-      _fillStats.fieldsFilled++;
       await sleep(200); // Accuracy-first: deliberate pacing between fields
     }
 
-    // Select dropdowns — only unselected ones (with fuzzy matching)
+    // Select dropdowns — only unselected ones
     const selects = $$('select').filter(el => isVisible(el) && !hasFieldValue(el));
     for (const sel of selects) {
       const lbl = getLabel(sel);
@@ -1303,113 +956,20 @@
         const lblLower = (lbl || '').toLowerCase();
         if (/gender|disability|veteran|race|ethnicity|sex\b|heritage/i.test(lblLower)) {
           const opts = $$('option', sel).filter(o => o.value && o.index > 0);
-          const fb = opts.find(o => /prefer not|decline|not to|do not|don.t wish|not disclose|not specified|choose not/i.test(o.text));
-          if (fb) { sel.value = fb.value; sel.dispatchEvent(new Event('change', { bubbles: true })); filled++; _fillStats.fieldsFilled++; }
+          const fb = opts.find(o => /prefer not|decline|not to|do not|don.t wish/i.test(o.text));
+          if (fb) { sel.value = fb.value; sel.dispatchEvent(new Event('change', { bubbles: true })); filled++; }
         }
         continue;
       }
-      _fillStats.fieldsAttempted++;
-      const matched = fuzzySelectOption(sel, val);
-      if (matched) { filled++; _fillStats.fieldsFilled++; }
-      else {
-        // For required selects, pick first valid option as absolute last resort
-        if (isFieldRequired(sel)) {
-          const opts = $$('option', sel).filter(o => o.value && o.index > 0);
-          if (opts.length) { sel.value = opts[0].value; sel.dispatchEvent(new Event('change', { bubbles: true })); filled++; _fillStats.fieldsFilled++; }
-        }
-        markFieldNotFilled(sel);
-      }
-    }
-
-    // React Select / Combobox / Autocomplete dropdowns (custom widgets not covered by <select>)
-    const comboboxSelectors = [
-      // React Select (v2/v3)
-      '.react-select__control:not(.react-select__control--has-value),.select__control:not(.select__control--has-value)',
-      // Select2
-      '.select2-selection:not(.select2-selection--has-value),.select2-container:not(.select2-container--has-value)',
-      // MUI Autocomplete
-      '.MuiAutocomplete-root:not(.MuiAutocomplete-hasValue)',
-      // Ant Design Select
-      '.ant-select:not(.ant-select-open):not(.ant-select-has-value)',
-      // Custom combobox/listbox triggers
-      '[role="combobox"]:not([aria-expanded="true"])',
-      // Downshift-based
-      '[data-testid*="combobox"]',
-      // Generic autocomplete inputs that aren't filled
-      'input[role="combobox"]:not([value])',
-      'input[aria-autocomplete="list"]:not([value])',
-      'input[aria-autocomplete="both"]:not([value])',
-    ];
-    for (const sel of comboboxSelectors) {
-      const widgets = $$(sel).filter(el => {
-        if (!isVisible(el)) return false;
-        // Skip if already has a value
-        const hasVal = el.querySelector('.react-select__single-value,.select__single-value,.select2-selection__rendered:not(.select2-selection__placeholder),.ant-select-selection-item,.MuiAutocomplete-tag');
-        if (hasVal && hasVal.textContent?.trim()) return false;
-        // Skip if input inside already has value
-        const inp = el.querySelector('input') || (el.tagName === 'INPUT' ? el : null);
-        if (inp && inp.value?.trim()) return false;
-        return true;
-      });
-      for (const widget of widgets) {
-        const lbl = getLabel(widget);
-        if (!lbl) continue;
-        const val = guessFieldValue(lbl, p, widget);
-        if (!val) continue;
-        markFieldFilling(widget);
-        // Find the input inside the widget
-        const inp = widget.querySelector('input[type="text"],input:not([type]),input[role="combobox"]') || (widget.tagName === 'INPUT' ? widget : null);
-        if (inp) {
-          // Type into the input to trigger the dropdown
-          inp.focus(); await sleep(200);
-          nativeSet(inp, val);
-          await sleep(600); // Wait for dropdown to appear
-          // Look for the dropdown that appeared
-          const dd = findAutocompleteDropdown(inp);
-          if (dd) {
-            const match = findBestDropdownMatch(dd, val);
-            if (match) { realClick(match); await sleep(300); markFieldFilled(widget); filled++; _fillStats.fieldsFilled++; continue; }
-            // Try "Other" as fallback
-            const other = findOtherOption(dd);
-            if (other) { realClick(other); await sleep(200); }
-          }
-          // Even if no dropdown match, the typed value may be accepted
-          inp.dispatchEvent(new Event('blur', { bubbles: true }));
-          inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-          inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', keyCode: 9, bubbles: true }));
-          await sleep(200);
-          markFieldFilled(widget); filled++; _fillStats.fieldsFilled++;
-        } else {
-          // No input found — try clicking the widget to open it, then select from dropdown
-          realClick(widget); await sleep(500);
-          const dd = findAutocompleteDropdown(widget);
-          if (dd) {
-            const match = findBestDropdownMatch(dd, val);
-            if (match) { realClick(match); await sleep(300); markFieldFilled(widget); filled++; _fillStats.fieldsFilled++; continue; }
-          }
-          // Close dropdown
-          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        }
-      }
-    }
-
-    // Multi-select checkboxes (e.g., "Select all that apply" style questions)
-    const multiSelectGroups = $$('fieldset,[role="group"],[class*="checkbox-group"],[class*="multi-select"]').filter(isVisible);
-    for (const group of multiSelectGroups) {
-      const checkboxes = $$('input[type="checkbox"]', group).filter(el => isVisible(el) && !el.checked);
-      if (!checkboxes.length) continue;
-      const lbl = getLabel(group) || group.querySelector('legend')?.textContent?.trim() || '';
-      if (!lbl) continue;
-      const val = guessFieldValue(lbl, p, group);
-      if (!val) continue;
-      // Try to match checkbox labels to the guessed value
-      const valLower = val.toLowerCase();
-      for (const cb of checkboxes) {
-        const cbLabel = getLabel(cb).toLowerCase();
-        if (cbLabel && (valLower.includes(cbLabel) || cbLabel.includes(valLower))) {
-          realClick(cb); filled++;
-        }
-      }
+      const valLower = val.toLowerCase().trim();
+      const opts = $$('option', sel).filter(o => o.value && o.index > 0);
+      let opt = opts.find(o => o.text.trim().toLowerCase() === valLower);
+      if (!opt) opt = opts.find(o => o.text.trim().toLowerCase().includes(valLower));
+      if (!opt) opt = opts.find(o => o.value.toLowerCase() === valLower);
+      if (!opt) opt = opts.find(o => valLower.includes(o.text.trim().toLowerCase()) && o.text.trim().length > 1);
+      if (!opt) { const words = valLower.split(/\s+/).filter(w => w.length > 2); if (words.length) opt = opts.find(o => words.some(w => o.text.trim().toLowerCase().includes(w))); }
+      if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true })); filled++; }
+      else if (opts.length) { sel.value = opts[0].value; sel.dispatchEvent(new Event('change', { bubbles: true })); filled++; }
     }
 
     // Radio buttons — Master Knockout Question System
@@ -1454,76 +1014,12 @@
       if (val && !isNaN(Number(val))) { nativeSet(n, val); n.dispatchEvent(new Event('change', { bubbles: true })); filled++; await sleep(150); }
     }
 
-    // URL fields (linkedin, github, portfolio, etc.)
-    const urlInputs = $$('input[type=url]').filter(el => isVisible(el) && !el.value?.trim());
-    for (const u of urlInputs) {
-      const lbl = getLabel(u);
-      const val = guessFieldValue(lbl, p, u);
-      if (val) {
-        // Ensure URL has protocol prefix for type=url validation
-        const urlVal = /^https?:\/\//i.test(val) ? val : `https://${val}`;
-        nativeSet(u, urlVal); filled++; await sleep(150);
-      }
-    }
-
-    // Month fields (e.g., graduation month, start month)
-    const monthInputs = $$('input[type=month]').filter(el => isVisible(el) && !el.value);
-    for (const m of monthInputs) {
-      const lbl = getLabel(m);
-      const l = (lbl || '').toLowerCase();
-      let val = '';
-      if (/start|available|begin|join/.test(l)) {
-        const today = new Date(); today.setDate(today.getDate() + 14);
-        val = today.toISOString().slice(0, 7); // YYYY-MM
-      } else if (/grad|end|completion|finish/.test(l)) {
-        val = p.graduation_year ? `${p.graduation_year}-05` : '';
-      } else if (/birth|dob/.test(l)) {
-        val = p.dob ? p.dob.slice(0, 7) : '';
-      }
-      if (val) { nativeSet(m, val); filled++; }
-    }
-
-    // Datetime-local fields
-    const dtInputs = $$('input[type=datetime-local]').filter(el => isVisible(el) && !el.value);
-    for (const dt of dtInputs) {
-      const lbl = getLabel(dt);
-      const l = (lbl || '').toLowerCase();
-      if (/start|available|begin|join|earliest/.test(l)) {
-        const d = new Date(); d.setDate(d.getDate() + 14); d.setHours(9, 0, 0, 0);
-        nativeSet(dt, d.toISOString().slice(0, 16)); filled++;
-      }
-    }
-
-    // Time fields (interview time preference, availability)
-    const timeInputs = $$('input[type=time]').filter(el => isVisible(el) && !el.value);
-    for (const t of timeInputs) {
-      nativeSet(t, '09:00'); filled++; // Default to 9 AM
-    }
-
-    // Contenteditable divs (rich text editors — Quill, Draft.js, ProseMirror, TinyMCE, etc.)
-    const editables = $$('[contenteditable="true"],.ql-editor,.DraftEditor-root,.ProseMirror,[role="textbox"][contenteditable],.tox-edit-area__iframe')
-      .filter(el => isVisible(el) && !el.textContent?.trim());
+    // Contenteditable divs (rich text editors)
+    const editables = $$('[contenteditable="true"]').filter(el => isVisible(el) && !el.textContent?.trim());
     for (const ed of editables) {
-      const lbl = getLabel(ed) || ed.getAttribute('data-placeholder') || ed.getAttribute('aria-label') || '';
+      const lbl = getLabel(ed) || ed.getAttribute('data-placeholder') || '';
       const val = guessFieldValue(lbl, p, ed);
-      if (val) {
-        // Clear first, then set — handles Quill/Draft.js placeholder behavior
-        ed.innerHTML = '';
-        ed.focus();
-        await sleep(100);
-        // Use innerHTML for rich text, textContent for plain
-        if (ed.classList.contains('ql-editor') || ed.classList.contains('ProseMirror')) {
-          ed.innerHTML = `<p>${val}</p>`;
-        } else {
-          ed.textContent = val;
-        }
-        ed.dispatchEvent(new Event('input', { bubbles: true }));
-        ed.dispatchEvent(new Event('change', { bubbles: true }));
-        ed.dispatchEvent(new Event('blur', { bubbles: true }));
-        markFieldFilled(ed);
-        filled++; _fillStats.fieldsFilled++;
-        await sleep(150);
-      }
+      if (val) { ed.textContent = val; ed.dispatchEvent(new Event('input', { bubbles: true })); filled++; await sleep(150); }
     }
 
     // Fix phone country code on every fallback fill pass
@@ -1554,22 +1050,15 @@
       const lbl = getLabel(sel);
       const val = guessFieldValue(lbl, p, sel);
       if (!val) continue;
-      if (fuzzySelectOption(sel, val)) refilled++;
+      const opt = $$('option', sel).find(o => o.text.toLowerCase().includes(val.toLowerCase()));
+      if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true })); refilled++; }
     }
     if (refilled > 0) LOG(`Verification pass: re-filled ${refilled} fields that were cleared`);
-    _fillStats.fieldsVerified += refilled;
-
-    // Mark all successfully filled fields as verified
-    $$('input:not([type=hidden]):not([type=file]):not([type=submit]):not([type=button]),textarea,select')
-      .filter(el => isVisible(el) && hasFieldValue(el))
-      .forEach(el => markFieldVerified(el));
 
     // Learn from all filled fields for future use
     learnFromFilledFields();
 
-    const summary = getFillSummary();
-    LOG(`Fallback fill done: ${filled} fields filled, ${refilled} re-verified — ${summary}`);
-    if (filled > 0) showToast(`Autofill complete: ${summary}`, filled === _fillStats.fieldsAttempted ? 'success' : 'info', 3000);
+    LOG(`Fallback fill done: ${filled} fields filled, ${refilled} re-verified`);
     return filled + refilled;
   }
 
@@ -1789,17 +1278,13 @@
 
     if (result === 'next_page') {
       LOG('Navigated to next page — continuing multi-page flow');
-      showToast('Moving to next page...', 'info', 2000);
       await sleep(3000);
       await multiPageLoop();
     } else if (result === 'submitted') {
       LOG('Application submitted!');
       await learnFromPage();
       await sleep(2000);
-      if (checkSuccess()) {
-        LOG('Success confirmed!');
-        showToast('Application submitted successfully!', 'success', 5000);
-      }
+      if (checkSuccess()) LOG('Success confirmed!');
     }
   }
 
@@ -3618,121 +3103,48 @@
 
   // ===================== FORM VALIDATION ERROR HANDLER =====================
   async function handleValidationErrors() {
-    // Multi-pass validation error handling with progressively broader detection
-    let totalFixed = 0;
+    // Wait a moment for validation to trigger
+    await sleep(500);
+    const errors = $$('.error,.field-error,.error-message,.validation-error,[class*="error"],[class*="Error"],.invalid-feedback,.help-block.with-errors,.field-validation-error,[aria-invalid="true"],[data-error]')
+      .filter(el => isVisible(el) && el.textContent?.trim());
+
+    if (!errors.length) return 0;
+    LOG(`Found ${errors.length} validation errors — attempting to fix`);
+
+    let fixed = 0;
     const p = await getProfile();
+    for (const errEl of errors) {
+      // Find the associated input
+      const container = errEl.closest('.form-group,.field,.question,[class*="Field"],[class*="Question"],li,.form-item,.ant-form-item,.MuiFormControl-root,fieldset,div');
+      if (!container) continue;
+      const inp = container.querySelector('input:not([type=hidden]):not([type=file]),textarea,select');
+      if (!inp || hasFieldValue(inp)) continue;
 
-    for (let pass = 0; pass < 3; pass++) {
-      await sleep(pass === 0 ? 500 : 800); // Let frameworks render errors
+      const lbl = getLabel(inp);
+      const val = guessFieldValue(lbl, p, inp);
+      if (!val) continue;
 
-      // Broad error selector set covering all major UI frameworks
-      const errorSelectors = [
-        // Standard error classes
-        '.error', '.field-error', '.error-message', '.validation-error',
-        '.invalid-feedback', '.help-block.with-errors', '.field-validation-error',
-        // Generic class patterns
-        '[class*="error"]', '[class*="Error"]', '[class*="invalid"]', '[class*="Invalid"]',
-        // ARIA
-        '[aria-invalid="true"]', '[data-error]', '[aria-errormessage]',
-        // Role-based
-        '[role="alert"]',
-        // Bootstrap
-        '.invalid-tooltip', '.is-invalid',
-        // MUI
-        '.Mui-error', '.MuiFormHelperText-root.Mui-error',
-        // Ant Design
-        '.ant-form-item-has-error', '.ant-form-explain',
-        // Workday
-        '[data-automation-id*="error"]', '[data-automation-id*="Error"]',
-        // Toast/inline errors
-        '[class*="Toast"][class*="error"]', '[class*="toast"][class*="error"]',
-        // Required field indicators that are visible (field still empty)
-        '.required-error', '[class*="required-error"]',
-      ];
-
-      const errors = $$(errorSelectors.join(',')).filter(el => {
-        if (!isVisible(el)) return false;
-        // Skip if it's a generic container with "error" in class but no actual error text
-        if (el.tagName === 'FORM' || el.tagName === 'BODY') return false;
-        return true;
-      });
-
-      if (!errors.length) break;
-      if (pass === 0) LOG(`Found ${errors.length} validation errors — attempting multi-pass fix`);
-
-      let passFixed = 0;
-      const processedInputs = new Set();
-
-      for (const errEl of errors) {
-        // Find the associated input via multiple strategies
-        const container = errEl.closest('.form-group,.field,.question,[class*="Field"],[class*="Question"],li,.form-item,.ant-form-item,.MuiFormControl-root,.MuiGrid-item,fieldset,[class*="formElement"],[class*="form-row"],[class*="input-group"],div[class]');
-        if (!container) continue;
-
-        // Try multiple input selectors
-        const inp = container.querySelector('input:not([type=hidden]):not([type=file]):not([type=submit]):not([type=button]),textarea,select') ||
-          container.querySelector('[contenteditable="true"]') ||
-          container.querySelector('[role="combobox"] input,[role="listbox"]');
-        if (!inp) continue;
-        if (processedInputs.has(inp)) continue;
-        processedInputs.add(inp);
-
-        // Skip if already has value (error might be format-related, not emptiness)
-        if (hasFieldValue(inp) && inp.tagName !== 'SELECT') continue;
-
-        const lbl = getLabel(inp);
-        const val = guessFieldValue(lbl, p, inp);
-        if (!val) continue;
-
-        if (inp.tagName === 'SELECT') {
-          if (fuzzySelectOption(inp, val)) passFixed++;
-        } else if (inp.getAttribute('contenteditable') === 'true') {
-          inp.textContent = ''; inp.textContent = val;
-          inp.dispatchEvent(new Event('input', { bubbles: true }));
-          inp.dispatchEvent(new Event('change', { bubbles: true }));
-          passFixed++;
-        } else {
-          inp.focus(); await sleep(50);
-          nativeSet(inp, val);
-          inp.dispatchEvent(new Event('blur', { bubbles: true }));
-          passFixed++;
-        }
-        await sleep(80);
+      if (inp.tagName === 'SELECT') {
+        const opt = $$('option', inp).find(o => o.text.toLowerCase().includes(val.toLowerCase()));
+        if (opt) { inp.value = opt.value; inp.dispatchEvent(new Event('change', { bubbles: true })); fixed++; }
+      } else {
+        inp.focus(); nativeSet(inp, val); fixed++;
       }
-
-      // Also handle aria-invalid fields directly (may not have visible error text)
-      const invalidFields = $$('[aria-invalid="true"]').filter(el => isVisible(el) && !hasFieldValue(el) && !processedInputs.has(el));
-      for (const inp of invalidFields) {
-        processedInputs.add(inp);
-        const lbl = getLabel(inp);
-        const val = guessFieldValue(lbl, p, inp);
-        if (!val) continue;
-        if (inp.tagName === 'SELECT') { if (fuzzySelectOption(inp, val)) passFixed++; }
-        else { inp.focus(); nativeSet(inp, val); inp.dispatchEvent(new Event('blur', { bubbles: true })); passFixed++; }
-        await sleep(60);
-      }
-
-      // Handle required fields that are still empty (even without visible error)
-      if (pass >= 1) {
-        const emptyRequired = $$('input:not([type=hidden]):not([type=file]),textarea,select')
-          .filter(el => isVisible(el) && isFieldRequired(el) && !hasFieldValue(el) && !processedInputs.has(el));
-        for (const inp of emptyRequired) {
-          processedInputs.add(inp);
-          const lbl = getLabel(inp);
-          const val = guessFieldValue(lbl, p, inp);
-          if (!val) continue;
-          if (inp.tagName === 'SELECT') { if (fuzzySelectOption(inp, val)) passFixed++; }
-          else { inp.focus(); await sleep(50); nativeSet(inp, val); passFixed++; }
-          await sleep(60);
-        }
-      }
-
-      totalFixed += passFixed;
-      if (passFixed === 0) break; // No more progress, stop retrying
-      LOG(`Validation fix pass ${pass + 1}: fixed ${passFixed} fields`);
+      await sleep(60);
     }
 
-    if (totalFixed > 0) LOG(`Total validation errors fixed: ${totalFixed}`);
-    return totalFixed;
+    // Also handle aria-invalid fields directly
+    const invalidFields = $$('[aria-invalid="true"]').filter(el => isVisible(el) && !hasFieldValue(el));
+    for (const inp of invalidFields) {
+      const lbl = getLabel(inp);
+      const val = guessFieldValue(lbl, p, inp);
+      if (!val) continue;
+      inp.focus(); nativeSet(inp, val); fixed++;
+      await sleep(60);
+    }
+
+    LOG(`Fixed ${fixed} validation errors`);
+    return fixed;
   }
 
   // ===================== ERROR RECOVERY & RETRY =====================
@@ -3982,7 +3394,6 @@
       const skipped = queue.filter(j => j.status === 'skipped').length;
       LOG(`Results: ${done} done, ${failed} failed, ${timedOut} timed out, ${skipped} skipped of ${queue.length} total`);
       if (qStats.totalTime > 0) LOG(`Average time: ${Math.round(qStats.totalTime / Math.max(done, 1) / 1000)}s per application`);
-      showToast(`Queue complete! ${done} applied, ${failed} failed of ${queue.length} total`, done > 0 ? 'success' : 'error', 8000);
       // Browser notification
       st.get('ua_notif_enabled').then(enabled => {
         if (enabled) sendNotification('Queue Complete!', `${done} applied, ${failed} failed, ${skipped} skipped of ${queue.length} total`);
@@ -3997,7 +3408,6 @@
     qActive = true; qPaused = false;
     qStats = { completed: 0, failed: 0, skipped: 0, timedOut: 0, totalTime: 0 };
     await st.set(SK.QA, true); await st.set(SK.QP, false); await saveStats();
-    showToast(`Starting queue: ${pending.length} jobs to apply`, 'info', 3000);
     updateCtrl(); goNext();
   }
   // LazyApply: resume from where we stopped (session resumption)
@@ -4518,7 +3928,7 @@
 #ua-drawer{position:fixed;display:none;width:380px;max-height:520px;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.14);flex-direction:column;overflow:hidden;border:1px solid #e5e7eb;z-index:2147483647;font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:#111827}
 #ua-drawer.open{display:flex}
 
-.ua-hdr{background:linear-gradient(135deg,#00815a,#00c985,#00a86b);padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
+.ua-hdr{background:linear-gradient(135deg,#00a86b,#00c985);padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
 .ua-hdr-t{font-size:15px;font-weight:700;color:#fff}
 .ua-hdr-sub{font-size:10px;color:rgba(255,255,255,.6);margin-top:1px}
 .ua-hdr-badge{background:rgba(255,255,255,.18);color:#fff;padding:3px 10px;border-radius:12px;font-size:10px;font-weight:700;letter-spacing:.3px}
@@ -4725,16 +4135,11 @@
     // --- Drawer ---
     const dw = document.createElement('div'); dw.id = 'ua-drawer';
     dw.innerHTML = `
-      <div class="ua-hdr"><div><div class="ua-hdr-t">Jobright AI Autofill</div><div class="ua-hdr-sub">Enhanced with OwlApply Intelligence &bull; v3.0</div></div><div style="display:flex;gap:6px;align-items:center"><button id="ua-dark-toggle" title="Dark Mode" style="background:none;border:none;cursor:pointer;font-size:16px;padding:2px">🌙</button><span class="ua-hdr-badge">UNLIMITED</span></div></div>
+      <div class="ua-hdr"><div><div class="ua-hdr-t">Ultimate Autofill</div><div class="ua-hdr-sub">AI-Powered Job Applications</div></div><div style="display:flex;gap:6px;align-items:center"><button id="ua-dark-toggle" title="Dark Mode" style="background:none;border:none;cursor:pointer;font-size:16px;padding:2px">🌙</button><span class="ua-hdr-badge">UNLIMITED</span></div></div>
       <div class="ua-body">
         <div class="ua-sec">
           <div class="ua-sec-t">Auto-Apply</div>
           <div class="ua-tog"><div><div class="ua-tog-l">Auto-Apply on ATS Pages</div><div class="ua-tog-d">Tailor → Autofill → Fill gaps → Submit</div></div><label class="ua-sw"><input type="checkbox" id="ua-aa"><span class="ua-sw-s"></span></label></div>
-          <div style="display:flex;gap:4px;margin-top:6px">
-            <button id="ua-quick-fill" style="flex:1;padding:6px;background:linear-gradient(135deg,#00c985,#059669);color:#fff;border:none;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer">Fill Now</button>
-            <button id="ua-quick-learn" style="flex:1;padding:6px;background:#f0fdf4;color:#059669;border:1px solid #d1fae5;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer">Learn Page</button>
-            <button id="ua-quick-verify" style="flex:1;padding:6px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer">Verify</button>
-          </div>
           <div id="ua-stat" class="ua-stat off"><span class="dot"></span><span id="ua-stat-t">Inactive</span></div>
         </div>
         <div class="ua-sec">
@@ -4747,16 +4152,6 @@
               <button id="ua-analyze" style="flex:1;padding:6px;background:#f3f4f6;color:#6b7280;border:none;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer">Analyze</button>
             </div>
           </div>
-        </div>
-        <div class="ua-sec">
-          <div class="ua-sec-t">Page Intelligence</div>
-          <div id="ua-page-intel" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-            <span class="ua-form-pill" id="ua-pi-job" style="opacity:0.4">Job Page</span>
-            <span class="ua-form-pill" id="ua-pi-ats" style="opacity:0.4">ATS</span>
-            <span class="ua-form-pill" id="ua-pi-iframe" style="opacity:0.4">Iframe</span>
-            <span class="ua-form-pill" id="ua-pi-form" style="opacity:0.4">Form</span>
-          </div>
-          <div id="ua-fill-summary" style="font-size:10px;color:#6b7280;margin-bottom:4px"></div>
         </div>
         <div class="ua-sec">
           <div class="ua-sec-t">Application History</div>
@@ -4804,25 +4199,6 @@
             <span style="font-size:10px;color:#6b7280" id="ua-ans-info">Learned answers help fill forms faster</span>
             <button id="ua-ans-clear" style="font-size:9px;padding:3px 8px;border:1px solid #fca5a5;border-radius:6px;background:none;color:#ef4444;cursor:pointer;white-space:nowrap">Clear All</button>
           </div>
-        </div>
-        <div class="ua-sec">
-          <div class="ua-sec-t">Custom Q&A <span id="ua-qa-cnt" style="color:#00c985"></span></div>
-          <p style="font-size:10px;color:#6b7280;margin:0 0 6px">Add your own question-answer pairs. The autofill will match these to form questions.</p>
-          <div id="ua-qa-list" style="max-height:200px;overflow-y:auto;font-size:10px;margin-bottom:6px"></div>
-          <div id="ua-qa-editor" style="display:none;padding:8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;margin-bottom:6px">
-            <label style="font-size:9px;color:#6b7280;display:block;margin-bottom:2px">Question (or keywords)</label>
-            <input type="text" id="ua-qa-question" placeholder="e.g. What is your preferred programming language?" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;box-sizing:border-box;margin-bottom:4px">
-            <label style="font-size:9px;color:#6b7280;display:block;margin-bottom:2px">Your Answer</label>
-            <textarea id="ua-qa-answer" rows="2" placeholder="e.g. Python, JavaScript, TypeScript" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;box-sizing:border-box;resize:vertical;margin-bottom:4px"></textarea>
-            <div style="display:flex;gap:4px"><button id="ua-qa-save-entry" class="ua-url-btn" style="flex:1;font-size:10px;padding:4px 8px">Save</button><button id="ua-qa-cancel-entry" style="flex:1;font-size:10px;padding:4px 8px;border:1px solid #6b7280;border-radius:6px;background:none;color:#6b7280;cursor:pointer">Cancel</button></div>
-          </div>
-          <div style="display:flex;gap:4px;flex-wrap:wrap">
-            <button id="ua-qa-add" style="flex:1;font-size:9px;padding:4px 8px;border:1px solid #a78bfa;border-radius:6px;background:none;color:#7c3aed;cursor:pointer">+ Add Q&A</button>
-            <button id="ua-qa-import" style="flex:1;font-size:9px;padding:4px 8px;border:1px solid #60a5fa;border-radius:6px;background:none;color:#3b82f6;cursor:pointer">Import</button>
-            <button id="ua-qa-export" style="flex:1;font-size:9px;padding:4px 8px;border:1px solid #60a5fa;border-radius:6px;background:none;color:#3b82f6;cursor:pointer">Export</button>
-            <button id="ua-qa-clear" style="flex:1;font-size:9px;padding:4px 8px;border:1px solid #fca5a5;border-radius:6px;background:none;color:#ef4444;cursor:pointer">Clear All</button>
-          </div>
-          <input type="file" id="ua-qa-file" accept=".json" style="display:none">
         </div>
         <div class="ua-sec">
           <div class="ua-sec-t">Profile <span id="ua-prof-status" style="color:#9ca3af">(click to edit)</span></div>
@@ -4957,33 +4333,7 @@
     tog.addEventListener('change', async e => {
       autoApply = e.target.checked; await st.set(SK.AA, autoApply); updateStat();
       if (autoApply && detectATS()) {
-        showToast('Auto-apply activated — starting...', 'info', 2000);
         dispatchATSAutomation();
-      }
-    });
-
-    // Quick Actions (OwlApply-inspired)
-    document.getElementById('ua-quick-fill')?.addEventListener('click', async () => {
-      showToast('Quick fill started...', 'info', 2000);
-      await fallbackFill();
-    });
-    document.getElementById('ua-quick-learn')?.addEventListener('click', async () => {
-      await learnFromPage();
-      await loadAnswerBank();
-      const cnt = Object.keys(_answerBank).length;
-      showToast(`Learned from page! ${cnt} answers in bank`, 'success', 3000);
-      const ansCntEl = document.getElementById('ua-ans-cnt');
-      if (ansCntEl) ansCntEl.textContent = `(${cnt} answers)`;
-    });
-    document.getElementById('ua-quick-verify')?.addEventListener('click', () => {
-      const analysis = getFormAnalysis();
-      const missing = getMissingRequired();
-      if (missing.length === 0 && analysis.filled === analysis.total) {
-        showToast('All fields verified — ready to submit!', 'success', 3000);
-      } else if (missing.length > 0) {
-        showToast(`${missing.length} required fields still empty: ${missing.slice(0, 3).join(', ')}`, 'error', 5000);
-      } else {
-        showToast(`${analysis.filled}/${analysis.total} fields filled`, 'info', 3000);
       }
     });
 
@@ -5107,116 +4457,6 @@
       }
     });
 
-    // ---- Custom Q&A bindings ----
-    const qaCnt = document.getElementById('ua-qa-cnt');
-    const qaList = document.getElementById('ua-qa-list');
-    const qaEditor = document.getElementById('ua-qa-editor');
-    const qaQuestion = document.getElementById('ua-qa-question');
-    const qaAnswer = document.getElementById('ua-qa-answer');
-    const qaFile = document.getElementById('ua-qa-file');
-    let _qaEditIdx = -1; // -1 = new, >=0 = editing existing
-
-    function renderCustomQA() {
-      if (!qaList) return;
-      if (!_customQA.length) {
-        qaList.innerHTML = '<div style="text-align:center;padding:12px;color:#9ca3af">No custom Q&A pairs yet. Click "+ Add Q&A" to create one.</div>';
-      } else {
-        qaList.innerHTML = _customQA.map((entry, i) => `<div style="padding:6px 8px;border:1px solid #f3f4f6;border-radius:6px;margin-bottom:4px;background:#fafafa">
-          <div style="color:#0ea5e9;font-weight:600;font-size:9px;word-break:break-word">Q: ${(entry.question || '').slice(0, 100)}${(entry.question || '').length > 100 ? '...' : ''}</div>
-          <div style="color:#374151;font-size:10px;margin-top:2px;word-break:break-word">A: ${(entry.answer || '').slice(0, 150)}${(entry.answer || '').length > 150 ? '...' : ''}</div>
-          <div style="display:flex;gap:8px;margin-top:2px">
-            <button class="ua-qa-edit-one" data-idx="${i}" style="font-size:8px;color:#3b82f6;background:none;border:none;cursor:pointer;padding:2px 0">edit</button>
-            <button class="ua-qa-del-one" data-idx="${i}" style="font-size:8px;color:#ef4444;background:none;border:none;cursor:pointer;padding:2px 0">remove</button>
-          </div>
-        </div>`).join('');
-        qaList.querySelectorAll('.ua-qa-edit-one').forEach(btn => {
-          btn.addEventListener('click', e => {
-            const idx = parseInt(e.target.dataset.idx);
-            _qaEditIdx = idx;
-            qaQuestion.value = _customQA[idx].question || '';
-            qaAnswer.value = _customQA[idx].answer || '';
-            qaEditor.style.display = 'block';
-          });
-        });
-        qaList.querySelectorAll('.ua-qa-del-one').forEach(btn => {
-          btn.addEventListener('click', async e => {
-            const idx = parseInt(e.target.dataset.idx);
-            _customQA.splice(idx, 1);
-            await saveCustomQA();
-            renderCustomQA();
-          });
-        });
-      }
-      if (qaCnt) qaCnt.textContent = `(${_customQA.length})`;
-    }
-
-    document.getElementById('ua-qa-add')?.addEventListener('click', () => {
-      _qaEditIdx = -1;
-      qaQuestion.value = ''; qaAnswer.value = '';
-      qaEditor.style.display = 'block';
-      qaQuestion.focus();
-    });
-
-    document.getElementById('ua-qa-save-entry')?.addEventListener('click', async () => {
-      const q = qaQuestion.value.trim();
-      const a = qaAnswer.value.trim();
-      if (!q || !a) { alert('Both question and answer are required.'); return; }
-      if (_qaEditIdx >= 0) {
-        _customQA[_qaEditIdx] = { question: q, answer: a, updatedAt: Date.now() };
-      } else {
-        _customQA.push({ question: q, answer: a, createdAt: Date.now(), updatedAt: Date.now() });
-      }
-      await saveCustomQA();
-      qaEditor.style.display = 'none';
-      renderCustomQA();
-      showToast(_qaEditIdx >= 0 ? 'Q&A updated!' : 'Q&A added!', 'success', 2000);
-    });
-
-    document.getElementById('ua-qa-cancel-entry')?.addEventListener('click', () => {
-      qaEditor.style.display = 'none';
-    });
-
-    document.getElementById('ua-qa-export')?.addEventListener('click', () => {
-      if (!_customQA.length) { alert('No Q&A pairs to export.'); return; }
-      const blob = new Blob([JSON.stringify(_customQA, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `custom-qa-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click(); URL.revokeObjectURL(url);
-    });
-
-    document.getElementById('ua-qa-import')?.addEventListener('click', () => qaFile?.click());
-    if (qaFile) qaFile.addEventListener('change', async e => {
-      const file = e.target.files[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        if (!Array.isArray(data)) throw new Error('Expected array');
-        let imported = 0;
-        for (const entry of data) {
-          if (entry.question && entry.answer) {
-            _customQA.push({ question: entry.question, answer: entry.answer, createdAt: Date.now(), updatedAt: Date.now() });
-            imported++;
-          }
-        }
-        await saveCustomQA();
-        renderCustomQA();
-        alert(`Imported ${imported} Q&A pairs.`);
-      } catch (err) { alert('Import error: ' + err.message); }
-      qaFile.value = '';
-    });
-
-    document.getElementById('ua-qa-clear')?.addEventListener('click', async () => {
-      if (!_customQA.length || !confirm(`Delete all ${_customQA.length} custom Q&A pairs?`)) return;
-      _customQA = [];
-      await saveCustomQA();
-      renderCustomQA();
-    });
-
-    // Initial render
-    loadCustomQA().then(() => renderCustomQA());
-
     // ---- Dark Mode ----
     document.getElementById('ua-dark-toggle')?.addEventListener('click', async () => {
       const dark = await toggleDarkMode();
@@ -5246,37 +4486,12 @@
     }
     document.getElementById('ua-fill-now')?.addEventListener('click', async () => {
       LOG('Manual fill triggered via button');
-      showToast('Filling form...', 'info', 2000);
       await fallbackFill();
       updateFormAnalysis();
-      updatePageIntelligence();
     });
-    document.getElementById('ua-analyze')?.addEventListener('click', () => { updateFormAnalysis(); updatePageIntelligence(); });
-    setInterval(() => { updateFormAnalysis(); updatePageIntelligence(); }, 5000);
-    setTimeout(() => { updateFormAnalysis(); updatePageIntelligence(); }, 1500);
-
-    // ---- Page Intelligence (OwlApply-inspired) ----
-    function updatePageIntelligence() {
-      const piJob = document.getElementById('ua-pi-job');
-      const piAts = document.getElementById('ua-pi-ats');
-      const piIframe = document.getElementById('ua-pi-iframe');
-      const piForm = document.getElementById('ua-pi-form');
-      const fillSummary = document.getElementById('ua-fill-summary');
-
-      const isJob = isJobPage();
-      const ats = detectATS();
-      const hasIframe = !!document.querySelector('iframe[src*="greenhouse"],iframe[src*="lever"],iframe[src*="icims"],iframe[src*="workday"]');
-      const hasForm = $$('form,input:not([type=hidden]),textarea,select').filter(isVisible).length > 2;
-
-      if (piJob) { piJob.style.opacity = isJob ? '1' : '0.4'; piJob.className = `ua-form-pill ${isJob ? 'good' : ''}`; piJob.textContent = isJob ? 'Job Page' : 'Not Job Page'; }
-      if (piAts) { piAts.style.opacity = ats ? '1' : '0.4'; piAts.className = `ua-form-pill ${ats ? 'good' : ''}`; piAts.textContent = ats || 'No ATS'; }
-      if (piIframe) { piIframe.style.opacity = hasIframe ? '1' : '0.4'; piIframe.className = `ua-form-pill ${hasIframe ? 'warn' : ''}`; piIframe.textContent = hasIframe ? 'Iframe Detected' : 'No Iframe'; }
-      if (piForm) { piForm.style.opacity = hasForm ? '1' : '0.4'; piForm.className = `ua-form-pill ${hasForm ? 'good' : ''}`; piForm.textContent = hasForm ? 'Form Found' : 'No Form'; }
-
-      if (fillSummary && _fillStats.fieldsAttempted > 0) {
-        fillSummary.textContent = `Last fill: ${getFillSummary()} | ${_fillStats.fieldsVerified} verified`;
-      }
-    }
+    document.getElementById('ua-analyze')?.addEventListener('click', updateFormAnalysis);
+    setInterval(updateFormAnalysis, 5000);
+    setTimeout(updateFormAnalysis, 1500);
 
     // ---- Application History ----
     function getTimeAgo(ts) {
@@ -5476,34 +4691,15 @@
 
     // Profile editor
     const profFields = [
-      // --- Personal Info ---
-      { k: 'first_name', l: 'First Name' }, { k: 'last_name', l: 'Last Name' }, { k: 'middle_name', l: 'Middle Name' },
-      { k: 'preferred_name', l: 'Preferred/Nickname' }, { k: 'prefix', l: 'Prefix (Mr/Ms/Dr)' }, { k: 'suffix', l: 'Suffix (Jr/Sr)' },
-      { k: 'email', l: 'Email' }, { k: 'phone', l: 'Phone' }, { k: 'phoneCountryCode', l: 'Phone Code (+353)' },
-      // --- Address ---
-      { k: 'address', l: 'Address Line 1' }, { k: 'address_line_2', l: 'Address Line 2 (Apt/Suite)' },
-      { k: 'city', l: 'City' }, { k: 'state', l: 'State/County' }, { k: 'postal_code', l: 'Eircode/Zip' }, { k: 'country', l: 'Country' },
-      // --- Identity & EEO (used for dropdown/radio selections) ---
-      { k: 'gender', l: 'Gender (Male/Female/Other/Prefer not to say)' },
-      { k: 'ethnicity', l: 'Ethnicity (Prefer not to say)' },
-      { k: 'veteran', l: 'Veteran Status' },
-      { k: 'disability', l: 'Disability Status' },
-      { k: 'nationality', l: 'Nationality' }, { k: 'dob', l: 'Date of Birth (YYYY-MM-DD)' },
-      // --- Online Profiles ---
-      { k: 'linkedin', l: 'LinkedIn URL' }, { k: 'github', l: 'GitHub URL' }, { k: 'website', l: 'Website/Portfolio' }, { k: 'twitter', l: 'Twitter/X URL' },
-      // --- Education ---
-      { k: 'school', l: 'School/University' }, { k: 'degree', l: 'Degree' }, { k: 'major', l: 'Major/Field of Study' },
-      { k: 'gpa', l: 'GPA' }, { k: 'graduation_year', l: 'Graduation Year' },
-      // --- Work ---
-      { k: 'current_title', l: 'Job Title' }, { k: 'current_company', l: 'Company' },
-      { k: 'years', l: 'Years Experience' }, { k: 'expected_salary', l: 'Expected Salary' }, { k: 'current_salary', l: 'Current Salary' },
-      { k: 'notice_period', l: 'Notice Period' }, { k: 'visa_status', l: 'Visa/Work Status' },
-      // --- Skills & Other ---
-      { k: 'skills', l: 'Skills (comma-separated)' }, { k: 'certifications', l: 'Certifications' }, { k: 'languages', l: 'Languages' },
-      { k: 'security_clearance', l: 'Security Clearance' },
-      // --- Long-form answers ---
-      { k: 'cover_letter', l: 'Cover Letter / Additional Info', textarea: true },
-      { k: 'summary', l: 'Professional Summary / Bio', textarea: true },
+      { k: 'first_name', l: 'First Name' }, { k: 'last_name', l: 'Last Name' }, { k: 'email', l: 'Email' }, { k: 'phone', l: 'Phone' },
+      { k: 'phoneCountryCode', l: 'Phone Code (+353)' }, { k: 'city', l: 'City' }, { k: 'state', l: 'State/County' }, { k: 'postal_code', l: 'Eircode/Zip' },
+      { k: 'country', l: 'Country' }, { k: 'address', l: 'Address' }, { k: 'address_line_2', l: 'Address Line 2' },
+      { k: 'gender', l: 'Gender (Male/Female/Other)' }, { k: 'ethnicity', l: 'Ethnicity' }, { k: 'veteran', l: 'Veteran Status' }, { k: 'disability', l: 'Disability Status' },
+      { k: 'linkedin', l: 'LinkedIn URL' }, { k: 'github', l: 'GitHub URL' }, { k: 'website', l: 'Website' },
+      { k: 'school', l: 'School/University' }, { k: 'degree', l: 'Degree' }, { k: 'major', l: 'Major' },
+      { k: 'graduation_year', l: 'Grad Year' }, { k: 'current_title', l: 'Job Title' }, { k: 'current_company', l: 'Company' },
+      { k: 'expected_salary', l: 'Expected Salary' }, { k: 'years', l: 'Years Experience' }, { k: 'nationality', l: 'Nationality' },
+      { k: 'skills', l: 'Skills' }, { k: 'notice_period', l: 'Notice Period' }, { k: 'visa_status', l: 'Visa Status' },
     ];
     const profContainer = document.getElementById('ua-prof-fields');
     const profPanel = document.getElementById('ua-prof');
@@ -5514,18 +4710,12 @@
       if (profPanel.style.display === 'none') {
         profPanel.style.display = 'block'; profToggle.style.display = 'none';
         const p = await getProfile();
-        profContainer.innerHTML = profFields.map(f => {
-          const val = (p[f.k] || '').replace(/"/g, '&quot;');
-          if (f.textarea) {
-            return `<div style="grid-column:1/-1"><label style="font-size:9px;color:#6b7280;display:block;margin-bottom:2px">${f.l}</label><textarea data-pk="${f.k}" rows="3" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;box-sizing:border-box;resize:vertical">${val}</textarea></div>`;
-          }
-          return `<div><label style="font-size:9px;color:#6b7280;display:block;margin-bottom:2px">${f.l}</label><input type="text" data-pk="${f.k}" value="${val}" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;box-sizing:border-box"></div>`;
-        }).join('');
+        profContainer.innerHTML = profFields.map(f => `<div><label style="font-size:9px;color:#6b7280;display:block;margin-bottom:2px">${f.l}</label><input type="text" data-pk="${f.k}" value="${(p[f.k] || '').replace(/"/g, '&quot;')}" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;box-sizing:border-box"></div>`).join('');
       }
     });
     document.getElementById('ua-prof-save')?.addEventListener('click', async () => {
       const p = await getProfile();
-      profContainer.querySelectorAll('input[data-pk],textarea[data-pk]').forEach(inp => { p[inp.dataset.pk] = inp.value.trim(); });
+      profContainer.querySelectorAll('input[data-pk]').forEach(inp => { p[inp.dataset.pk] = inp.value.trim(); });
       await st.set(SK.PROF, p);
       profPanel.style.display = 'none'; profToggle.style.display = 'block';
       profStatus.textContent = '(saved)'; profStatus.style.color = '#059669';
@@ -5630,52 +4820,31 @@
     if (/joinhandshake\.com/i.test(url)) return await handshakeAutomation();
     if (/governmentjobs\.com|usajobs\.gov/i.test(url)) return await usajobsAutomation();
     if (/eightfold\.ai/i.test(url)) return await eightfoldAutomation();
-    if (/recruitee\.com/i.test(url)) return await directAutofillFlow();
-    if (/pinpointhq\.com/i.test(url)) return await directAutofillFlow();
-    if (/comeet\.com/i.test(url)) return await directAutofillFlow();
-    if (/personio\.de/i.test(url)) return await directAutofillFlow();
-    if (/fountain\.com/i.test(url)) return await directAutofillFlow();
-    if (/teamtailor\.com/i.test(url)) return await directAutofillFlow();
-    if (/homerun\.co/i.test(url)) return await directAutofillFlow();
-    if (/zohorecruit\.com|recruit\.zoho/i.test(url)) return await directAutofillFlow();
-    if (/freshteam\.com/i.test(url)) return await directAutofillFlow();
-    if (/dover\.com|dover\.io/i.test(url)) return await directAutofillFlow();
-    if (/gem\.com/i.test(url)) return await directAutofillFlow();
-    if (/wellfound\.com/i.test(url)) return await directAutofillFlow();
-    if (/ziprecruiter\.com/i.test(url)) return await directAutofillFlow();
-    if (/dice\.com/i.test(url)) return await directAutofillFlow();
-    if (/monster\.com/i.test(url)) return await directAutofillFlow();
-    if (/careerbuilder\.com/i.test(url)) return await directAutofillFlow();
-    if (/simplyhired\.com/i.test(url)) return await directAutofillFlow();
     return await tailorFirstFlow();
   }
 
   // ===================== INIT =====================
   async function init() {
     if (window.self !== window.top) return;
-    await load(); await loadAnswerBank(); await loadSavedResponses(); await loadCustomQA(); await loadAppHistory(); await loadResumes(); await loadCustomDefaults(); await loadRateLimitDelay(); injectCSS(); buildUI(); setupKeyboardShortcuts();
+    await load(); await loadAnswerBank(); await loadSavedResponses(); await loadAppHistory(); await loadResumes(); await loadCustomDefaults(); await loadRateLimitDelay(); injectCSS(); buildUI(); setupKeyboardShortcuts();
     [500, 1500, 3000, 5000, 8000, 12000].forEach(ms => setTimeout(hideCredits, ms));
     observe(); showATSBadge(); renderQ(); updateStat(); updateCtrl();
     // Update answer bank count in UI
     const ansCntEl = document.getElementById('ua-ans-cnt');
     if (ansCntEl) ansCntEl.textContent = `(${Object.keys(_answerBank).length} answers)`;
 
-    // OwlApply: Dual-auth support
-    initDualAuth();
-
-    // OwlApply: Greenhouse iframe detection (runs on interval)
-    detectGreenhouseIframes();
-    setInterval(detectGreenhouseIframes, 3000);
-
-    // OwlApply: Job page auto-detection with toast
-    if (isJobPage()) {
-      const ats = detectATS();
-      if (ats) {
-        showToast(`${ats} detected — ready to autofill`, 'info', 3000);
+    const ats = detectATS();
+    if (ats) {
+      LOG(`ATS detected: ${ats}`);
+      // Auto-start ATS-specific flow when detected and auto-apply is on
+      if (autoApply) {
+        await sleep(2000);
+        await dispatchATSAutomation();
       }
     }
-
-    // ===== AUTO-LEARN: capture user-filled fields in real time =====
+    if (qActive) { await sleep(2000); processQ(); }
+    if (isJobright()) { await sleep(2000); resumeTailoringAutomation(); }
+    // Auto-learn: capture user-filled fields for future autofills
     document.addEventListener('focusout', (e) => {
       const el = e.target;
       if (!el || !el.tagName) return;
@@ -5688,21 +4857,7 @@
       const val = tag === 'SELECT' ? (el.options[el.selectedIndex]?.text || el.value) : el.value;
       if (val && val.trim() && val.trim().length > 1) learnAnswer(lbl, val.trim());
     }, true);
-    // Learn before page unload
     window.addEventListener('beforeunload', () => { try { learnFromFilledFields(); } catch (_) {} });
-
-    const ats = detectATS();
-    if (ats) {
-      LOG(`ATS detected: ${ats}`);
-      // Auto-start ATS-specific flow when detected and auto-apply is on
-      if (autoApply) {
-        await sleep(2000);
-        showToast(`Auto-applying on ${ats}...`, 'info', 5000);
-        await dispatchATSAutomation();
-      }
-    }
-    if (qActive) { await sleep(2000); processQ(); }
-    if (isJobright()) { await sleep(2000); resumeTailoringAutomation(); }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
