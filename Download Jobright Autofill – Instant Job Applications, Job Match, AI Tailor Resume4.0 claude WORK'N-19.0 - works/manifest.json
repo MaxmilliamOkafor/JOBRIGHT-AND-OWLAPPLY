@@ -17,10 +17,10 @@
       "128": "icon128.plasmo.3c1ed2d2.png"
     }
   },
-  "version": "3.0.0",
+  "version": "2.0.0",
   "author": "Jobright.ai",
-  "name": "Jobright AI Autofill – Enhanced Job Applications, Smart Match, AI Resume & Queue Apply",
-  "description": "1-click autofill ALL job applications across 100+ ATS platforms. AI-powered resume tailoring, cover letter generation, answer learning, batch queue apply, and smart knockout question handling. Trusted by 500K+ job seekers.",
+  "name": "Jobright Autofill – Instant Job Applications, Job Match, AI Tailor Resume",
+  "description": "1-click to autofill ALL job applications across every ATS platform and company career site. AI-powered response tailoring for 100% perfect match. One-click queue button. Trusted by 500K+ job seekers.",
   "background": {
     "service_worker": "static/background/index.js"
   },
@@ -67,19 +67,8 @@
         "https://crcldu.com/*"
       ],
       "run_at": "document_idle"
-    },
-    {
-      "matches": ["<all_urls>"],
-      "css": ["owlapply-feedback.css"],
-      "all_frames": true
     }
   ],
-  "externally_connectable": {
-    "matches": [
-      "https://*.jobright.ai/",
-      "https://*.owlapply.com/"
-    ]
-  },
   "host_permissions": [
     "http://*/*",
     "https://*/*",
@@ -139,8 +128,7 @@
         "contents.db9f5cfc.svg",
         "contents.05613898.svg",
         "contents.d078b867.svg",
-        "contents.5d2686fc.svg",
-        "owlapply-feedback.css"
+        "contents.5d2686fc.svg"
       ]
     }
   ]
