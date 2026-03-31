@@ -520,10 +520,10 @@
     if (/sponsor|visa|immigration|work.?permit/.test(l)) return DEFAULTS.sponsorship;
     if (/relocat|willing.*move/.test(l)) return DEFAULTS.relocation;
     if (/remote|work.*home|hybrid|on.?site/.test(l)) return DEFAULTS.remote;
-    if (/veteran|military|armed.?forces/.test(l)) return DEFAULTS.veteran;
-    if (/disabilit/.test(l)) return DEFAULTS.disability;
-    if (/gender|sex\b|pronouns/.test(l)) return DEFAULTS.gender;
-    if (/ethnic|race|racial|heritage/.test(l)) return DEFAULTS.ethnicity;
+    if (/veteran|military|armed.?forces/.test(l)) return p.veteran || DEFAULTS.veteran;
+    if (/disabilit/.test(l)) return p.disability || DEFAULTS.disability;
+    if (/gender|sex\b|pronouns/.test(l)) return p.gender || DEFAULTS.gender;
+    if (/ethnic|race|racial|heritage/.test(l)) return p.ethnicity || p.race || DEFAULTS.ethnicity;
     if (/country.?code|phone.?code|dial.?code|calling.?code/.test(l)) return p.phoneCountryCode || DEFAULTS.phoneCountryCode;
     if (/nationality|citizenship/.test(l)) return p.nationality || p.country || DEFAULTS.country;
     if (/language|fluency|fluent/.test(l)) return p.languages || 'English';
@@ -582,8 +582,10 @@
   }
 
   function guessFieldValue(label, p, el) {
-    // Try saved responses keyword match first, then guessValue, then learned answers
+    // Priority: Custom Q&A (user-defined) → Saved Responses → guessValue (pattern matching) → Answer Bank (learned)
     const questionText = el ? getFullQuestionText(el) : label;
+    const fromCustomQA = findCustomQAMatch(questionText) || findCustomQAMatch(label);
+    if (fromCustomQA) return fromCustomQA;
     const fromSaved = findSavedResponseMatch(questionText);
     return fromSaved || guessValue(label, p) || getLearnedAnswer(label, el) || '';
   }
@@ -681,6 +683,46 @@
     }
   }
 
+  // ===================== CUSTOM Q&A SYSTEM =====================
+  // User-defined question-answer pairs that take highest priority in autofill matching
+  let _customQA = [];
+  let _customQALoaded = false;
+
+  async function loadCustomQA() {
+    if (_customQALoaded) return _customQA;
+    _customQA = (await st.get('ua_custom_qa')) || [];
+    _customQALoaded = true;
+    return _customQA;
+  }
+
+  async function saveCustomQA() {
+    await st.set('ua_custom_qa', _customQA);
+  }
+
+  function findCustomQAMatch(questionText) {
+    if (!_customQA.length || !questionText) return '';
+    const qNorm = questionText.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+    const qWords = qNorm.split(' ').filter(w => w.length > 2);
+    if (!qWords.length) return '';
+    let bestMatch = null, bestScore = 0;
+    for (const entry of _customQA) {
+      if (!entry.answer) continue;
+      const qPattern = (entry.question || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+      const patternWords = qPattern.split(' ').filter(w => w.length > 2);
+      if (!patternWords.length) continue;
+      // Score by word overlap
+      const matchCount = patternWords.filter(pw => qWords.some(qw => qw.includes(pw) || pw.includes(qw))).length;
+      const score = matchCount / patternWords.length;
+      // Also check direct substring match
+      if (qNorm.includes(qPattern) || qPattern.includes(qNorm)) {
+        if (1.0 > bestScore) { bestScore = 1.0; bestMatch = entry.answer; }
+        continue;
+      }
+      if (score > bestScore && score >= 0.5) { bestScore = score; bestMatch = entry.answer; }
+    }
+    return bestMatch || '';
+  }
+
   // ===================== MASTER KNOCKOUT QUESTION ANSWERING SYSTEM =====================
   // Comprehensive handling for radio, button-style, select, and text knockout questions
   function getFullQuestionText(el) {
@@ -757,7 +799,18 @@
   function answerKnockoutRadioGroup(radios, parent, p) {
     const questionText = (parent?.textContent || '').toLowerCase().replace(/\s+/g, ' ');
 
-    // 1. Check saved responses first
+    // 0. Check Custom Q&A first (highest priority — user-defined answers)
+    const customAnswer = findCustomQAMatch(questionText);
+    if (customAnswer) {
+      const match = radios.find(r => {
+        const lbl = $(`label[for="${CSS.escape(r.id)}"]`, parent);
+        const txt = (lbl?.textContent || r.value || '').trim().toLowerCase();
+        return txt.includes(customAnswer.toLowerCase()) || customAnswer.toLowerCase().includes(txt);
+      });
+      if (match) { realClick(match); return true; }
+    }
+
+    // 1. Check saved responses
     const savedAnswer = findSavedResponseMatch(questionText);
     if (savedAnswer) {
       const match = radios.find(r => {
@@ -791,10 +844,24 @@
     if (hasYes && hasNo) {
       const decision = determineYesNo(questionText);
       if (decision === 'eeo') {
-        // Try "Prefer not to say/answer"
+        // For EEO questions, check if user has a profile value (e.g. gender=Male)
+        const eeoVal = (/gender|sex\b/i.test(questionText) ? p.gender :
+          /disabilit/i.test(questionText) ? p.disability :
+          /veteran|military/i.test(questionText) ? p.veteran :
+          /ethnic|race|racial|heritage|hispanic|latino/i.test(questionText) ? (p.ethnicity || p.race) : '') || '';
+        if (eeoVal && !/prefer not/i.test(eeoVal)) {
+          // User has explicitly set a value — match it
+          const profMatch = radios.find(r => {
+            const lbl = $(`label[for="${CSS.escape(r.id)}"]`, parent);
+            const txt = (lbl?.textContent || r.value || '').trim().toLowerCase();
+            return txt.includes(eeoVal.toLowerCase()) || eeoVal.toLowerCase().includes(txt);
+          });
+          if (profMatch) { realClick(profMatch); return true; }
+        }
+        // Fall back to "Prefer not to say/answer"
         const pref = radios.find(r => {
           const lbl = $(`label[for="${CSS.escape(r.id)}"]`, parent);
-          return /prefer not|decline|do not|don.t wish/i.test(lbl?.textContent || r.value || '');
+          return /prefer not|decline|do not|don.t wish|not disclose|choose not/i.test(lbl?.textContent || r.value || '');
         });
         if (pref) { realClick(pref); return true; }
       }
@@ -1185,6 +1252,8 @@
     LOG('Fallback fill starting — catching missed fields');
     const p = await getProfile();
     await loadAnswerBank();
+    await loadCustomQA();
+    await loadSavedResponses();
     let filled = 0;
     resetFillStats();
 
@@ -4723,6 +4792,25 @@
           </div>
         </div>
         <div class="ua-sec">
+          <div class="ua-sec-t">Custom Q&A <span id="ua-qa-cnt" style="color:#00c985"></span></div>
+          <p style="font-size:10px;color:#6b7280;margin:0 0 6px">Add your own question-answer pairs. The autofill will match these to form questions.</p>
+          <div id="ua-qa-list" style="max-height:200px;overflow-y:auto;font-size:10px;margin-bottom:6px"></div>
+          <div id="ua-qa-editor" style="display:none;padding:8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;margin-bottom:6px">
+            <label style="font-size:9px;color:#6b7280;display:block;margin-bottom:2px">Question (or keywords)</label>
+            <input type="text" id="ua-qa-question" placeholder="e.g. What is your preferred programming language?" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;box-sizing:border-box;margin-bottom:4px">
+            <label style="font-size:9px;color:#6b7280;display:block;margin-bottom:2px">Your Answer</label>
+            <textarea id="ua-qa-answer" rows="2" placeholder="e.g. Python, JavaScript, TypeScript" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;box-sizing:border-box;resize:vertical;margin-bottom:4px"></textarea>
+            <div style="display:flex;gap:4px"><button id="ua-qa-save-entry" class="ua-url-btn" style="flex:1;font-size:10px;padding:4px 8px">Save</button><button id="ua-qa-cancel-entry" style="flex:1;font-size:10px;padding:4px 8px;border:1px solid #6b7280;border-radius:6px;background:none;color:#6b7280;cursor:pointer">Cancel</button></div>
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button id="ua-qa-add" style="flex:1;font-size:9px;padding:4px 8px;border:1px solid #a78bfa;border-radius:6px;background:none;color:#7c3aed;cursor:pointer">+ Add Q&A</button>
+            <button id="ua-qa-import" style="flex:1;font-size:9px;padding:4px 8px;border:1px solid #60a5fa;border-radius:6px;background:none;color:#3b82f6;cursor:pointer">Import</button>
+            <button id="ua-qa-export" style="flex:1;font-size:9px;padding:4px 8px;border:1px solid #60a5fa;border-radius:6px;background:none;color:#3b82f6;cursor:pointer">Export</button>
+            <button id="ua-qa-clear" style="flex:1;font-size:9px;padding:4px 8px;border:1px solid #fca5a5;border-radius:6px;background:none;color:#ef4444;cursor:pointer">Clear All</button>
+          </div>
+          <input type="file" id="ua-qa-file" accept=".json" style="display:none">
+        </div>
+        <div class="ua-sec">
           <div class="ua-sec-t">Profile <span id="ua-prof-status" style="color:#9ca3af">(click to edit)</span></div>
           <div id="ua-prof" style="display:none;padding:8px;background:#f9fafb;border-radius:8px;border:1px solid #f3f4f6">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px" id="ua-prof-fields"></div>
@@ -5005,6 +5093,116 @@
       }
     });
 
+    // ---- Custom Q&A bindings ----
+    const qaCnt = document.getElementById('ua-qa-cnt');
+    const qaList = document.getElementById('ua-qa-list');
+    const qaEditor = document.getElementById('ua-qa-editor');
+    const qaQuestion = document.getElementById('ua-qa-question');
+    const qaAnswer = document.getElementById('ua-qa-answer');
+    const qaFile = document.getElementById('ua-qa-file');
+    let _qaEditIdx = -1; // -1 = new, >=0 = editing existing
+
+    function renderCustomQA() {
+      if (!qaList) return;
+      if (!_customQA.length) {
+        qaList.innerHTML = '<div style="text-align:center;padding:12px;color:#9ca3af">No custom Q&A pairs yet. Click "+ Add Q&A" to create one.</div>';
+      } else {
+        qaList.innerHTML = _customQA.map((entry, i) => `<div style="padding:6px 8px;border:1px solid #f3f4f6;border-radius:6px;margin-bottom:4px;background:#fafafa">
+          <div style="color:#0ea5e9;font-weight:600;font-size:9px;word-break:break-word">Q: ${(entry.question || '').slice(0, 100)}${(entry.question || '').length > 100 ? '...' : ''}</div>
+          <div style="color:#374151;font-size:10px;margin-top:2px;word-break:break-word">A: ${(entry.answer || '').slice(0, 150)}${(entry.answer || '').length > 150 ? '...' : ''}</div>
+          <div style="display:flex;gap:8px;margin-top:2px">
+            <button class="ua-qa-edit-one" data-idx="${i}" style="font-size:8px;color:#3b82f6;background:none;border:none;cursor:pointer;padding:2px 0">edit</button>
+            <button class="ua-qa-del-one" data-idx="${i}" style="font-size:8px;color:#ef4444;background:none;border:none;cursor:pointer;padding:2px 0">remove</button>
+          </div>
+        </div>`).join('');
+        qaList.querySelectorAll('.ua-qa-edit-one').forEach(btn => {
+          btn.addEventListener('click', e => {
+            const idx = parseInt(e.target.dataset.idx);
+            _qaEditIdx = idx;
+            qaQuestion.value = _customQA[idx].question || '';
+            qaAnswer.value = _customQA[idx].answer || '';
+            qaEditor.style.display = 'block';
+          });
+        });
+        qaList.querySelectorAll('.ua-qa-del-one').forEach(btn => {
+          btn.addEventListener('click', async e => {
+            const idx = parseInt(e.target.dataset.idx);
+            _customQA.splice(idx, 1);
+            await saveCustomQA();
+            renderCustomQA();
+          });
+        });
+      }
+      if (qaCnt) qaCnt.textContent = `(${_customQA.length})`;
+    }
+
+    document.getElementById('ua-qa-add')?.addEventListener('click', () => {
+      _qaEditIdx = -1;
+      qaQuestion.value = ''; qaAnswer.value = '';
+      qaEditor.style.display = 'block';
+      qaQuestion.focus();
+    });
+
+    document.getElementById('ua-qa-save-entry')?.addEventListener('click', async () => {
+      const q = qaQuestion.value.trim();
+      const a = qaAnswer.value.trim();
+      if (!q || !a) { alert('Both question and answer are required.'); return; }
+      if (_qaEditIdx >= 0) {
+        _customQA[_qaEditIdx] = { question: q, answer: a, updatedAt: Date.now() };
+      } else {
+        _customQA.push({ question: q, answer: a, createdAt: Date.now(), updatedAt: Date.now() });
+      }
+      await saveCustomQA();
+      qaEditor.style.display = 'none';
+      renderCustomQA();
+      showToast(_qaEditIdx >= 0 ? 'Q&A updated!' : 'Q&A added!', 'success', 2000);
+    });
+
+    document.getElementById('ua-qa-cancel-entry')?.addEventListener('click', () => {
+      qaEditor.style.display = 'none';
+    });
+
+    document.getElementById('ua-qa-export')?.addEventListener('click', () => {
+      if (!_customQA.length) { alert('No Q&A pairs to export.'); return; }
+      const blob = new Blob([JSON.stringify(_customQA, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `custom-qa-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click(); URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('ua-qa-import')?.addEventListener('click', () => qaFile?.click());
+    if (qaFile) qaFile.addEventListener('change', async e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (!Array.isArray(data)) throw new Error('Expected array');
+        let imported = 0;
+        for (const entry of data) {
+          if (entry.question && entry.answer) {
+            _customQA.push({ question: entry.question, answer: entry.answer, createdAt: Date.now(), updatedAt: Date.now() });
+            imported++;
+          }
+        }
+        await saveCustomQA();
+        renderCustomQA();
+        alert(`Imported ${imported} Q&A pairs.`);
+      } catch (err) { alert('Import error: ' + err.message); }
+      qaFile.value = '';
+    });
+
+    document.getElementById('ua-qa-clear')?.addEventListener('click', async () => {
+      if (!_customQA.length || !confirm(`Delete all ${_customQA.length} custom Q&A pairs?`)) return;
+      _customQA = [];
+      await saveCustomQA();
+      renderCustomQA();
+    });
+
+    // Initial render
+    loadCustomQA().then(() => renderCustomQA());
+
     // ---- Dark Mode ----
     document.getElementById('ua-dark-toggle')?.addEventListener('click', async () => {
       const dark = await toggleDarkMode();
@@ -5264,12 +5462,34 @@
 
     // Profile editor
     const profFields = [
-      { k: 'first_name', l: 'First Name' }, { k: 'last_name', l: 'Last Name' }, { k: 'email', l: 'Email' }, { k: 'phone', l: 'Phone' },
-      { k: 'phoneCountryCode', l: 'Phone Code (+353)' }, { k: 'city', l: 'City' }, { k: 'state', l: 'State/County' }, { k: 'postal_code', l: 'Eircode/Zip' },
-      { k: 'country', l: 'Country' }, { k: 'address', l: 'Address' }, { k: 'linkedin', l: 'LinkedIn URL' }, { k: 'github', l: 'GitHub URL' },
-      { k: 'website', l: 'Website' }, { k: 'school', l: 'School/University' }, { k: 'degree', l: 'Degree' }, { k: 'major', l: 'Major' },
-      { k: 'graduation_year', l: 'Grad Year' }, { k: 'current_title', l: 'Job Title' }, { k: 'current_company', l: 'Company' },
-      { k: 'expected_salary', l: 'Expected Salary' }, { k: 'years', l: 'Years Experience' }, { k: 'nationality', l: 'Nationality' },
+      // --- Personal Info ---
+      { k: 'first_name', l: 'First Name' }, { k: 'last_name', l: 'Last Name' }, { k: 'middle_name', l: 'Middle Name' },
+      { k: 'preferred_name', l: 'Preferred/Nickname' }, { k: 'prefix', l: 'Prefix (Mr/Ms/Dr)' }, { k: 'suffix', l: 'Suffix (Jr/Sr)' },
+      { k: 'email', l: 'Email' }, { k: 'phone', l: 'Phone' }, { k: 'phoneCountryCode', l: 'Phone Code (+353)' },
+      // --- Address ---
+      { k: 'address', l: 'Address Line 1' }, { k: 'address_line_2', l: 'Address Line 2 (Apt/Suite)' },
+      { k: 'city', l: 'City' }, { k: 'state', l: 'State/County' }, { k: 'postal_code', l: 'Eircode/Zip' }, { k: 'country', l: 'Country' },
+      // --- Identity & EEO (used for dropdown/radio selections) ---
+      { k: 'gender', l: 'Gender (Male/Female/Other/Prefer not to say)' },
+      { k: 'ethnicity', l: 'Ethnicity (Prefer not to say)' },
+      { k: 'veteran', l: 'Veteran Status' },
+      { k: 'disability', l: 'Disability Status' },
+      { k: 'nationality', l: 'Nationality' }, { k: 'dob', l: 'Date of Birth (YYYY-MM-DD)' },
+      // --- Online Profiles ---
+      { k: 'linkedin', l: 'LinkedIn URL' }, { k: 'github', l: 'GitHub URL' }, { k: 'website', l: 'Website/Portfolio' }, { k: 'twitter', l: 'Twitter/X URL' },
+      // --- Education ---
+      { k: 'school', l: 'School/University' }, { k: 'degree', l: 'Degree' }, { k: 'major', l: 'Major/Field of Study' },
+      { k: 'gpa', l: 'GPA' }, { k: 'graduation_year', l: 'Graduation Year' },
+      // --- Work ---
+      { k: 'current_title', l: 'Job Title' }, { k: 'current_company', l: 'Company' },
+      { k: 'years', l: 'Years Experience' }, { k: 'expected_salary', l: 'Expected Salary' }, { k: 'current_salary', l: 'Current Salary' },
+      { k: 'notice_period', l: 'Notice Period' }, { k: 'visa_status', l: 'Visa/Work Status' },
+      // --- Skills & Other ---
+      { k: 'skills', l: 'Skills (comma-separated)' }, { k: 'certifications', l: 'Certifications' }, { k: 'languages', l: 'Languages' },
+      { k: 'security_clearance', l: 'Security Clearance' },
+      // --- Long-form answers ---
+      { k: 'cover_letter', l: 'Cover Letter / Additional Info', textarea: true },
+      { k: 'summary', l: 'Professional Summary / Bio', textarea: true },
     ];
     const profContainer = document.getElementById('ua-prof-fields');
     const profPanel = document.getElementById('ua-prof');
@@ -5280,12 +5500,18 @@
       if (profPanel.style.display === 'none') {
         profPanel.style.display = 'block'; profToggle.style.display = 'none';
         const p = await getProfile();
-        profContainer.innerHTML = profFields.map(f => `<div><label style="font-size:9px;color:#6b7280;display:block;margin-bottom:2px">${f.l}</label><input type="text" data-pk="${f.k}" value="${(p[f.k] || '').replace(/"/g, '&quot;')}" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;box-sizing:border-box"></div>`).join('');
+        profContainer.innerHTML = profFields.map(f => {
+          const val = (p[f.k] || '').replace(/"/g, '&quot;');
+          if (f.textarea) {
+            return `<div style="grid-column:1/-1"><label style="font-size:9px;color:#6b7280;display:block;margin-bottom:2px">${f.l}</label><textarea data-pk="${f.k}" rows="3" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;box-sizing:border-box;resize:vertical">${val}</textarea></div>`;
+          }
+          return `<div><label style="font-size:9px;color:#6b7280;display:block;margin-bottom:2px">${f.l}</label><input type="text" data-pk="${f.k}" value="${val}" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;box-sizing:border-box"></div>`;
+        }).join('');
       }
     });
     document.getElementById('ua-prof-save')?.addEventListener('click', async () => {
       const p = await getProfile();
-      profContainer.querySelectorAll('input[data-pk]').forEach(inp => { p[inp.dataset.pk] = inp.value.trim(); });
+      profContainer.querySelectorAll('input[data-pk],textarea[data-pk]').forEach(inp => { p[inp.dataset.pk] = inp.value.trim(); });
       await st.set(SK.PROF, p);
       profPanel.style.display = 'none'; profToggle.style.display = 'block';
       profStatus.textContent = '(saved)'; profStatus.style.color = '#059669';
