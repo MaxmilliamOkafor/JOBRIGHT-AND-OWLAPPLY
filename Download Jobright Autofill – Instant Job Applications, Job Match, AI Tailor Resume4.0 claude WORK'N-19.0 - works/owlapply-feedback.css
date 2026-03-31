@@ -1,0 +1,205 @@
+/* === JOBRIGHT + OWLAPPLY ENHANCED VISUAL FEEDBACK === */
+/* v3.0 - Merged autofill visual indicators */
+
+/* Successfully filled fields — Jobright green pulse */
+.autofilled-by-jobright,
+.autofilled-by-owlapply {
+  animation: jobright-fill-pulse 2s ease-in-out;
+  border: 2px solid rgba(0, 201, 133, 0.6) !important;
+  box-shadow: 0 0 6px rgba(0, 201, 133, 0.3) !important;
+  transition: all 0.3s ease;
+}
+
+@keyframes jobright-fill-pulse {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(0, 201, 133, 0.08); }
+}
+
+/* Fields that could NOT be filled — warning red */
+.not-filled-by-jobright,
+.not-filled-by-owlapply {
+  animation: jobright-error-pulse 2s ease-in-out;
+  border: 2px solid rgba(239, 68, 68, 0.5) !important;
+  box-shadow: 0 0 5px rgba(239, 68, 68, 0.3) !important;
+  transition: all 0.3s ease;
+}
+
+@keyframes jobright-error-pulse {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(239, 68, 68, 0.08); }
+}
+
+.not-filled-by-jobright:focus,
+.not-filled-by-owlapply:focus {
+  border-color: rgba(239, 68, 68, 0.8) !important;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.5) !important;
+}
+
+/* Currently highlighted/active field */
+.highlighted-by-jobright,
+.highlighted-by-owlapply {
+  outline: 2px solid #00c985 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 12px rgba(0, 201, 133, 0.4), 0 0 24px rgba(0, 201, 133, 0.2) !important;
+  transition: outline 0.3s ease, box-shadow 0.3s ease !important;
+  z-index: 9999 !important;
+  isolation: isolate !important;
+  overflow: visible !important;
+}
+
+/* Field being processed — amber pulse */
+.filling-by-jobright {
+  animation: jobright-filling-pulse 1s ease-in-out infinite;
+  border: 2px solid rgba(245, 158, 11, 0.5) !important;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.3) !important;
+}
+
+@keyframes jobright-filling-pulse {
+  0%, 100% { background-color: transparent; border-color: rgba(245, 158, 11, 0.5); }
+  50% { background-color: rgba(245, 158, 11, 0.06); border-color: rgba(245, 158, 11, 0.8); }
+}
+
+/* Verified/confirmed field — solid green checkmark indicator */
+.verified-by-jobright {
+  border: 2px solid rgba(16, 185, 129, 0.6) !important;
+  box-shadow: 0 0 4px rgba(16, 185, 129, 0.2) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 6px center !important;
+  background-size: 14px 14px !important;
+  padding-right: 28px !important;
+}
+
+/* Queue progress toast notification */
+.jobright-toast {
+  position: fixed;
+  bottom: 80px;
+  right: 28px;
+  background: linear-gradient(135deg, #064e3b, #065f46);
+  color: #d1fae5;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: jobright-toast-in 0.3s ease-out;
+  max-width: 320px;
+}
+
+.jobright-toast.success { border-left: 4px solid #10b981; }
+.jobright-toast.error { border-left: 4px solid #ef4444; background: linear-gradient(135deg, #450a0a, #7f1d1d); }
+.jobright-toast.info { border-left: 4px solid #3b82f6; background: linear-gradient(135deg, #1e1b4b, #312e81); }
+
+@keyframes jobright-toast-in {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.jobright-toast-dismiss {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 2px;
+  margin-left: auto;
+}
+
+.jobright-toast-dismiss:hover { color: #fff; }
+
+/* Greenhouse iframe overlay button (from OwlApply) */
+.jobright-greenhouse-button {
+  position: absolute;
+  z-index: 999999;
+  background: linear-gradient(135deg, #00c985, #00a86b);
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 201, 133, 0.3);
+  transition: all 0.2s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.jobright-greenhouse-button:hover {
+  box-shadow: 0 4px 16px rgba(0, 201, 133, 0.45);
+  transform: translateY(-1px);
+}
+
+/* Smart field confidence indicator (shows match quality) */
+.jobright-confidence-high::after {
+  content: '●';
+  color: #10b981;
+  font-size: 8px;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+}
+
+.jobright-confidence-medium::after {
+  content: '●';
+  color: #f59e0b;
+  font-size: 8px;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+}
+
+.jobright-confidence-low::after {
+  content: '●';
+  color: #ef4444;
+  font-size: 8px;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+}
+
+/* ATS detection banner enhancement */
+.jobright-ats-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(90deg, #064e3b, #065f46, #064e3b);
+  color: #6ee7b7;
+  text-align: center;
+  padding: 6px 16px;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 2147483646;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  animation: jobright-banner-in 0.4s ease-out;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+@keyframes jobright-banner-in {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+.jobright-ats-banner .close-btn {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.jobright-ats-banner .close-btn:hover { color: #fff; }
