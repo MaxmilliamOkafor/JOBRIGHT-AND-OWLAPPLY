@@ -789,7 +789,21 @@
     if (hasYes && hasNo) {
       const decision = determineYesNo(questionText);
       if (decision === 'eeo') {
-        // Try "Prefer not to say/answer"
+        // Try profile value first for EEO questions
+        let eeoVal = '';
+        if (/gender|sex\b/i.test(questionText)) eeoVal = p.gender || '';
+        else if (/ethnic|race|racial|heritage/i.test(questionText)) eeoVal = p.ethnicity || p.race || '';
+        else if (/veteran|military/i.test(questionText)) eeoVal = p.veteran || '';
+        else if (/disabilit/i.test(questionText)) eeoVal = p.disability || '';
+        if (eeoVal) {
+          const eeoMatch = radios.find(r => {
+            const lbl = $(`label[for="${CSS.escape(r.id)}"]`, parent);
+            const txt = (lbl?.textContent || r.value || '').toLowerCase().trim();
+            return txt === eeoVal.toLowerCase() || txt.includes(eeoVal.toLowerCase());
+          });
+          if (eeoMatch) { realClick(eeoMatch); return true; }
+        }
+        // Fall back to "Prefer not to say/answer"
         const pref = radios.find(r => {
           const lbl = $(`label[for="${CSS.escape(r.id)}"]`, parent);
           return /prefer not|decline|do not|don.t wish/i.test(lbl?.textContent || r.value || '');
@@ -2407,16 +2421,17 @@
   async function workdayFillEEO() {
     // Gender
     const genderBtn = $('button[data-automation-id="gender"]:not([disabled]), select[data-automation-id="gender"]');
-    if (genderBtn) await selectFromWorkdayDropdown(genderBtn, DEFAULTS.gender);
+    const eeoP = await getProfile();
+    if (genderBtn) await selectFromWorkdayDropdown(genderBtn, eeoP.gender || DEFAULTS.gender);
     // Ethnicity/Race
     const raceBtn = $('button[data-automation-id="ethnicity"]:not([disabled]), button[data-automation-id="race"]:not([disabled])');
-    if (raceBtn) await selectFromWorkdayDropdown(raceBtn, DEFAULTS.ethnicity);
+    if (raceBtn) await selectFromWorkdayDropdown(raceBtn, eeoP.ethnicity || eeoP.race || DEFAULTS.ethnicity);
     // Veteran
     const vetBtn = $('button[data-automation-id="veteranStatus"]:not([disabled])');
-    if (vetBtn) await selectFromWorkdayDropdown(vetBtn, DEFAULTS.veteran);
+    if (vetBtn) await selectFromWorkdayDropdown(vetBtn, eeoP.veteran || DEFAULTS.veteran);
     // Disability
     const disBtn = $('button[data-automation-id="disabilityStatus"]:not([disabled])');
-    if (disBtn) await selectFromWorkdayDropdown(disBtn, DEFAULTS.disability);
+    if (disBtn) await selectFromWorkdayDropdown(disBtn, eeoP.disability || DEFAULTS.disability);
     // Hispanic/Latino dropdown (SpeedyApply pattern)
     const hispBtn = $('button[data-automation-id="hispanicOrLatino"]:not([disabled]), [name="hispanicOrLatino"]');
     if (hispBtn) await selectFromWorkdayDropdown(hispBtn, 'I choose not to disclose');
@@ -3253,10 +3268,10 @@
       '#address,input[name="address"]': p.address || '',
       '#city,input[name="city"]': p.city || '',
       '#linkedin_url,input[name*="linkedin"]': p.linkedin_profile_url || p.linkedin || '',
-      '#eeo_gender,select[name="eeo_gender"]': DEFAULTS.gender,
-      '#eeo_race,select[name="eeo_race"]': DEFAULTS.ethnicity,
-      '#eeo_veteran,select[name="eeo_veteran"]': DEFAULTS.veteran,
-      '#eeo_disability,select[name="eeo_disability"]': DEFAULTS.disability,
+      '#eeo_gender,select[name="eeo_gender"]': p.gender || DEFAULTS.gender,
+      '#eeo_race,select[name="eeo_race"]': p.ethnicity || p.race || DEFAULTS.ethnicity,
+      '#eeo_veteran,select[name="eeo_veteran"]': p.veteran || DEFAULTS.veteran,
+      '#eeo_disability,select[name="eeo_disability"]': p.disability || DEFAULTS.disability,
     };
     for (const [sels, val] of Object.entries(jzFields)) {
       if (!val) continue;
@@ -3690,7 +3705,7 @@
         case 'f': // Alt+F: Run fallback fill
           e.preventDefault();
           LOG('Manual fallback fill triggered via Alt+F');
-          fallbackFill();
+          fallbackFill().catch(e => LOG('fallbackFill error:', e));
           break;
         case 's': // Alt+S: Start/stop queue
           e.preventDefault();
@@ -3938,7 +3953,7 @@
     await saveQ(); renderQ(); updateCtrl();
   }
   async function pauseQ() { qPaused = true; await st.set(SK.QP, true); renderQ(); updateCtrl(); }
-  async function resumeQ() { qPaused = false; await st.set(SK.QP, false); processQ(); renderQ(); updateCtrl(); }
+  async function resumeQ() { qPaused = false; await st.set(SK.QP, false); processQ().catch(e => LOG('processQ error:', e)); renderQ(); updateCtrl(); }
   async function skipJob() {
     clearTimeout(_qTimeoutId);
     const c = queue.find(j => j.status === 'applying');
